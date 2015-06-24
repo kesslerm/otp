@@ -3,16 +3,17 @@
 %%
 %% Copyright Ericsson AB 2008-2015. All Rights Reserved.
 %%
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
 %%
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %%
 %% %CopyrightEnd%
 %%
@@ -23,12 +24,14 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("kernel/include/inet.hrl").
+-include_lib("kernel/include/file.hrl").
 
 %% Note: This directive should only be used in test suites.
 -compile(export_all).
 
 -define(NEWLINE, <<"\r\n">>).
 
+-define(REKEY_DATA_TMO, 65000).
 %%--------------------------------------------------------------------
 %% Common Test interface functions -----------------------------------
 %%--------------------------------------------------------------------
@@ -44,21 +47,33 @@ all() ->
      {group, dsa_pass_key},
      {group, rsa_pass_key},
      {group, internal_error},
+     connectfun_disconnectfun_server,
+     connectfun_disconnectfun_client,
+     {group, renegotiate},
      daemon_already_started,
      server_password_option,
      server_userpassword_option,
+     {group, dir_options},
      double_close,
      ssh_connect_timeout,
      ssh_connect_arg4_timeout,
      packet_size_zero,
      ssh_daemon_minimal_remote_max_packet_size_option,
+     ssh_msg_debug_fun_option_client,
+     ssh_msg_debug_fun_option_server,
+     disconnectfun_option_server,
+     disconnectfun_option_client,
+     unexpectedfun_option_server,
+     unexpectedfun_option_client,
+     preferred_algorithms,
      id_string_no_opt_client,
      id_string_own_string_client,
      id_string_random_client,
      id_string_no_opt_server,
      id_string_own_string_server,
      id_string_random_server,
-     {group, hardening_tests}
+     {group, hardening_tests},
+     ssh_info_print
     ].
 
 groups() ->
@@ -67,6 +82,7 @@ groups() ->
      {dsa_pass_key, [], [pass_phrase]},
      {rsa_pass_key, [], [pass_phrase]},
      {internal_error, [], [internal_error]},
+     {renegotiate, [], [rekey, rekey_limit, renegotiate1, renegotiate2]},
      {hardening_tests, [], [ssh_connect_nonegtimeout_connected_parallel,
 			    ssh_connect_nonegtimeout_connected_sequential,
 			    ssh_connect_negtimeout_parallel,
@@ -75,19 +91,21 @@ groups() ->
 			    max_sessions_ssh_connect_sequential,
 			    max_sessions_sftp_start_channel_parallel,
 			    max_sessions_sftp_start_channel_sequential
-			   ]}
+			   ]},
+     {dir_options, [], [user_dir_option,
+			system_dir_option]}
     ].
 
 
 basic_tests() ->
     [send, close, peername_sockname,
      exec, exec_compressed, shell, cli, known_hosts, 
-     idle_time, rekey, openssh_zlib_basic_test,
-     misc_ssh_options, inet_option].
+     idle_time, openssh_zlib_basic_test, misc_ssh_options, inet_option].
 
 
 %%--------------------------------------------------------------------
 init_per_suite(Config) ->
+    catch crypto:stop(),
     case catch crypto:start() of
 	ok ->
 	    Config;
@@ -126,6 +144,48 @@ init_per_group(internal_error, Config) ->
     ssh_test_lib:setup_dsa(DataDir, PrivDir),
     file:delete(filename:join(PrivDir, "system/ssh_host_dsa_key")),
     Config;
+init_per_group(dir_options, Config) ->
+    PrivDir = ?config(priv_dir, Config),
+    %% Make unreadable dir:
+    Dir_unreadable = filename:join(PrivDir, "unread"),
+    ok = file:make_dir(Dir_unreadable),
+    {ok,F1} = file:read_file_info(Dir_unreadable),
+    ok = file:write_file_info(Dir_unreadable, 
+			      F1#file_info{mode = F1#file_info.mode band (bnot 8#00444)}),
+    %% Make readable file:
+    File_readable = filename:join(PrivDir, "file"),
+    ok = file:write_file(File_readable, <<>>),
+
+    %% Check:
+    case {file:read_file_info(Dir_unreadable), 
+	  file:read_file_info(File_readable)} of
+	{{ok, Id=#file_info{type=directory, access=Md}},
+	 {ok, If=#file_info{type=regular,   access=Mf}}} ->
+	    AccessOK =
+		case {Md,                Mf} of
+		    {read,               _} -> false;
+		    {read_write,         _} -> false;
+		    {_,               read} -> true;
+		    {_,         read_write} -> true;
+		    _ -> false
+		end,
+
+	    case AccessOK of
+		true ->
+		    %% Save:
+		    [{unreadable_dir, Dir_unreadable},
+		     {readable_file, File_readable} 
+		     | Config];
+		false ->
+		    ct:log("File#file_info : ~p~n"
+			   "Dir#file_info  : ~p",[If,Id]),
+		    {skip, "File or dir mode settings failed"}
+	    end;
+
+	NotDirFile ->
+	    ct:log("{Dir,File} -> ~p",[NotDirFile]),
+	    {skip, "File/Dir creation failed"}
+    end;
 init_per_group(_, Config) ->
     Config.
 
@@ -285,7 +345,7 @@ exec_compressed(Config) when is_list(Config) ->
     UserDir = ?config(priv_dir, Config), 
 
     {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SystemDir},{user_dir, UserDir},
-					     {compression, zlib},
+					     {preferred_algorithms,[{compression, [zlib]}]},
 					     {failfun, fun ssh_test_lib:failfun/2}]),
     
     ConnectionRef =
@@ -331,24 +391,174 @@ idle_time(Config) ->
 rekey() ->
     [{doc, "Idle timeout test"}].
 rekey(Config) ->
-    SystemDir = filename:join(?config(priv_dir, Config), system),
+    SystemDir = ?config(data_dir, Config),
     UserDir = ?config(priv_dir, Config),
 
     {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SystemDir},
-					     {user_dir, UserDir},
+    					     {user_dir, UserDir},
 					     {failfun, fun ssh_test_lib:failfun/2},
+    					     {user_passwords,
+    					      [{"simon", "says"}]},
 					     {rekey_limit, 0}]),
+
     ConnectionRef =
 	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
 					  {user_dir, UserDir},
+					  {user, "simon"},
+					  {password, "says"},
 					  {user_interaction, false},
 					  {rekey_limit, 0}]),
     receive
-    after 200000 ->
+    after ?REKEY_DATA_TMO ->
 	    %%By this time rekeying would have been done
 	    ssh:close(ConnectionRef),
 	    ssh:stop_daemon(Pid)
     end.
+%%--------------------------------------------------------------------
+rekey_limit() ->
+    [{doc, "Test rekeying by data volume"}].
+rekey_limit(Config) ->
+    SystemDir = ?config(data_dir, Config),
+    UserDir = ?config(priv_dir, Config),
+    DataFile = filename:join(UserDir, "rekey.data"),
+
+    {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SystemDir},
+    					     {user_dir, UserDir},
+    					     {user_passwords,
+    					      [{"simon", "says"}]}]),
+    {ok, SftpPid, ConnectionRef} =
+    	ssh_sftp:start_channel(Host, Port, [{system_dir, SystemDir},
+    					    {user_dir, UserDir},
+    					    {user, "simon"},
+    					    {password, "says"},
+    					    {rekey_limit, 2500},
+    					    {user_interaction, false},
+    					    {silently_accept_hosts, true}]),
+
+    Kex1 = get_kex_init(ConnectionRef),
+
+    timer:sleep(?REKEY_DATA_TMO),
+    Kex1 = get_kex_init(ConnectionRef),
+
+    Data = lists:duplicate(9000,1),
+    ok = ssh_sftp:write_file(SftpPid, DataFile, Data),
+
+    timer:sleep(?REKEY_DATA_TMO),
+    Kex2 = get_kex_init(ConnectionRef),
+
+    false = (Kex2 == Kex1),
+
+    timer:sleep(?REKEY_DATA_TMO),
+    Kex2 = get_kex_init(ConnectionRef),
+
+    ok = ssh_sftp:write_file(SftpPid, DataFile, "hi\n"),
+
+    timer:sleep(?REKEY_DATA_TMO),
+    Kex2 = get_kex_init(ConnectionRef),
+
+    false = (Kex2 == Kex1),
+
+    timer:sleep(?REKEY_DATA_TMO),
+    Kex2 = get_kex_init(ConnectionRef),
+
+
+    ssh_sftp:stop_channel(SftpPid),
+    ssh:close(ConnectionRef),
+    ssh:stop_daemon(Pid).
+
+%%--------------------------------------------------------------------
+renegotiate1() ->
+    [{doc, "Test rekeying with simulataneous send request"}].
+renegotiate1(Config) ->
+    SystemDir = ?config(data_dir, Config),
+    UserDir = ?config(priv_dir, Config),
+    DataFile = filename:join(UserDir, "renegotiate1.data"),
+
+    {Pid, Host, DPort} = ssh_test_lib:daemon([{system_dir, SystemDir},
+					       {user_dir, UserDir},
+					       {user_passwords,
+						[{"simon", "says"}]}]),
+    RPort = ssh_test_lib:inet_port(),
+
+    {ok,RelayPid} = ssh_relay:start_link({0,0,0,0}, RPort, Host, DPort),
+
+    {ok, SftpPid, ConnectionRef} =
+	ssh_sftp:start_channel(Host, RPort, [{system_dir, SystemDir},
+					     {user_dir, UserDir},
+					     {user, "simon"},
+					     {password, "says"},
+					     {user_interaction, false},
+					     {silently_accept_hosts, true}]),
+
+    Kex1 = get_kex_init(ConnectionRef),
+
+    {ok, Handle} = ssh_sftp:open(SftpPid, DataFile, [write]),
+
+    ok = ssh_sftp:write(SftpPid, Handle, "hi\n"),
+
+    ssh_relay:hold(RelayPid, rx, 20, 1000),
+    ssh_connection_handler:renegotiate(ConnectionRef),
+    spawn(fun() -> ok=ssh_sftp:write(SftpPid, Handle, "another hi\n") end),
+
+    timer:sleep(2000),
+
+    Kex2 = get_kex_init(ConnectionRef),
+
+    false = (Kex2 == Kex1),
+    
+    ssh_relay:stop(RelayPid),
+    ssh_sftp:stop_channel(SftpPid),
+    ssh:close(ConnectionRef),
+    ssh:stop_daemon(Pid).
+
+%%--------------------------------------------------------------------
+renegotiate2() ->
+    [{doc, "Test rekeying with inflight messages from peer"}].
+renegotiate2(Config) ->
+    SystemDir = ?config(data_dir, Config),
+    UserDir = ?config(priv_dir, Config),
+    DataFile = filename:join(UserDir, "renegotiate1.data"),
+
+    {Pid, Host, DPort} = ssh_test_lib:daemon([{system_dir, SystemDir},
+					       {user_dir, UserDir},
+					       {user_passwords,
+						[{"simon", "says"}]}]),
+    RPort = ssh_test_lib:inet_port(),
+
+    {ok,RelayPid} = ssh_relay:start_link({0,0,0,0}, RPort, Host, DPort),
+
+    {ok, SftpPid, ConnectionRef} =
+	ssh_sftp:start_channel(Host, RPort, [{system_dir, SystemDir},
+					     {user_dir, UserDir},
+					     {user, "simon"},
+					     {password, "says"},
+					     {user_interaction, false},
+					     {silently_accept_hosts, true}]),
+
+    Kex1 = get_kex_init(ConnectionRef),
+
+    {ok, Handle} = ssh_sftp:open(SftpPid, DataFile, [write]),
+
+    ok = ssh_sftp:write(SftpPid, Handle, "hi\n"),
+
+    ssh_relay:hold(RelayPid, rx, 20, infinity),
+    spawn(fun() -> ok=ssh_sftp:write(SftpPid, Handle, "another hi\n") end),
+    %% need a small pause here to ensure ssh_sftp:write is executed
+    ct:sleep(10),
+    ssh_connection_handler:renegotiate(ConnectionRef),
+    ssh_relay:release(RelayPid, rx),
+
+    timer:sleep(2000),
+
+    Kex2 = get_kex_init(ConnectionRef),
+
+    false = (Kex2 == Kex1),
+
+    ssh_relay:stop(RelayPid),
+    ssh_sftp:stop_channel(SftpPid),
+    ssh:close(ConnectionRef),
+    ssh:stop_daemon(Pid).
+
 %%--------------------------------------------------------------------
 shell() ->
     [{doc, "Test that ssh:shell/2 works"}].
@@ -492,6 +702,355 @@ server_userpassword_option(Config) when is_list(Config) ->
 				 {user_interaction, false},
 				 {user_dir, UserDir}]),
     ssh:stop_daemon(Pid).
+
+%%--------------------------------------------------------------------
+system_dir_option(Config) ->
+    DirUnread = proplists:get_value(unreadable_dir,Config),
+    FileRead = proplists:get_value(readable_file,Config),
+
+    case ssh_test_lib:daemon([{system_dir, DirUnread}]) of
+	{error,{eoptions,{{system_dir,DirUnread},eacces}}} ->
+	    ok;
+	{Pid1,_Host1,Port1} when is_pid(Pid1),is_integer(Port1) ->
+	    ssh:stop_daemon(Pid1),
+	    ct:fail("Didn't detect that dir is unreadable", [])
+	end,
+    
+    case ssh_test_lib:daemon([{system_dir, FileRead}]) of
+	{error,{eoptions,{{system_dir,FileRead},enotdir}}} ->
+	    ok;
+	{Pid2,_Host2,Port2} when is_pid(Pid2),is_integer(Port2) ->
+	    ssh:stop_daemon(Pid2),
+	    ct:fail("Didn't detect that option is a plain file", [])
+    end.
+
+
+user_dir_option(Config) ->
+    DirUnread = proplists:get_value(unreadable_dir,Config),
+    FileRead = proplists:get_value(readable_file,Config),
+    %% Any port will do (beware, implementation knowledge!):
+    Port = 65535,
+
+    case ssh:connect("localhost", Port, [{user_dir, DirUnread}]) of
+	{error,{eoptions,{{user_dir,DirUnread},eacces}}} ->
+	    ok;
+	{error,econnrefused} ->
+	    ct:fail("Didn't detect that dir is unreadable", [])
+    end,
+
+    case ssh:connect("localhost", Port, [{user_dir, FileRead}]) of
+	{error,{eoptions,{{user_dir,FileRead},enotdir}}} ->
+	    ok;
+	{error,econnrefused} ->
+	    ct:fail("Didn't detect that option is a plain file", [])
+    end.
+
+%%--------------------------------------------------------------------
+ssh_msg_debug_fun_option_client() ->
+    [{doc, "validate client that uses the 'ssh_msg_debug_fun' option"}].
+ssh_msg_debug_fun_option_client(Config) ->
+    PrivDir = ?config(priv_dir, Config),
+    UserDir = filename:join(PrivDir, nopubkey), % to make sure we don't use public-key-auth
+    file:make_dir(UserDir),
+    SysDir = ?config(data_dir, Config),
+
+    {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SysDir},
+					     {user_dir, UserDir},
+					     {password, "morot"},
+					     {failfun, fun ssh_test_lib:failfun/2}]),
+    Parent = self(),
+    DbgFun = fun(ConnRef,Displ,Msg,Lang) -> Parent ! {msg_dbg,{ConnRef,Displ,Msg,Lang}} end,
+		
+    ConnectionRef =
+	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
+					  {user, "foo"},
+					  {password, "morot"},
+					  {user_dir, UserDir},
+					  {user_interaction, false},
+					  {ssh_msg_debug_fun,DbgFun}]),
+    %% Beware, implementation knowledge:
+    gen_fsm:send_all_state_event(ConnectionRef,{ssh_msg_debug,false,<<"Hello">>,<<>>}),
+    receive
+	{msg_dbg,X={ConnectionRef,false,<<"Hello">>,<<>>}} ->
+	    ct:log("Got expected dbg msg ~p",[X]),
+	    ssh:stop_daemon(Pid);
+	{msg_dbg,X={_,false,<<"Hello">>,<<>>}} ->
+	    ct:log("Got dbg msg but bad ConnectionRef (~p expected) ~p",[ConnectionRef,X]),
+	    ssh:stop_daemon(Pid),
+	    {fail, "Bad ConnectionRef received"};
+	{msg_dbg,X} ->
+	    ct:log("Got bad dbg msg ~p",[X]),
+	    ssh:stop_daemon(Pid),
+	    {fail,"Bad msg received"}
+    after 1000 ->
+	    ssh:stop_daemon(Pid),
+	    {fail,timeout}
+    end.
+
+%%--------------------------------------------------------------------
+connectfun_disconnectfun_server(Config) ->
+    PrivDir = ?config(priv_dir, Config),
+    UserDir = filename:join(PrivDir, nopubkey), % to make sure we don't use public-key-auth
+    file:make_dir(UserDir),
+    SysDir = ?config(data_dir, Config),
+
+    Parent = self(),
+    Ref = make_ref(),
+    ConnFun = fun(_,_,_) -> Parent ! {connect,Ref} end,
+    DiscFun = fun(R) -> Parent ! {disconnect,Ref,R} end,
+
+    {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SysDir},
+					     {user_dir, UserDir},
+					     {password, "morot"},
+					     {failfun, fun ssh_test_lib:failfun/2},
+					     {disconnectfun, DiscFun},
+					     {connectfun, ConnFun}]),
+    ConnectionRef =
+	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
+					  {user, "foo"},
+					  {password, "morot"},
+					  {user_dir, UserDir},
+					  {user_interaction, false}]),
+    receive
+	{connect,Ref} ->
+	    ssh:close(ConnectionRef),
+	    receive
+		{disconnect,Ref,R} ->
+		    ct:log("Disconnect result: ~p",[R]),
+		    ssh:stop_daemon(Pid)
+	    after 2000 ->
+		    {fail, "No disconnectfun action"}
+	    end
+    after 2000 ->
+	    {fail, "No connectfun action"}
+    end.
+
+%%--------------------------------------------------------------------
+connectfun_disconnectfun_client(Config) ->
+    PrivDir = ?config(priv_dir, Config),
+    UserDir = filename:join(PrivDir, nopubkey), % to make sure we don't use public-key-auth
+    file:make_dir(UserDir),
+    SysDir = ?config(data_dir, Config),
+
+    Parent = self(),
+    Ref = make_ref(),
+    DiscFun = fun(R) -> Parent ! {disconnect,Ref,R} end,
+
+    {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SysDir},
+					     {user_dir, UserDir},
+					     {password, "morot"},
+					     {failfun, fun ssh_test_lib:failfun/2}]),
+    _ConnectionRef =
+	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
+					  {user, "foo"},
+					  {password, "morot"},
+					  {user_dir, UserDir},
+					  {disconnectfun, DiscFun},
+					  {user_interaction, false}]),
+    ssh:stop_daemon(Pid),
+    receive
+	{disconnect,Ref,R} ->
+	    ct:log("Disconnect result: ~p",[R])
+    after 2000 ->
+	    {fail, "No disconnectfun action"}
+    end.
+
+%%--------------------------------------------------------------------
+ssh_msg_debug_fun_option_server() ->
+    [{doc, "validate client that uses the 'ssh_msg_debug_fun' option"}].
+ssh_msg_debug_fun_option_server(Config) ->
+    PrivDir = ?config(priv_dir, Config),
+    UserDir = filename:join(PrivDir, nopubkey), % to make sure we don't use public-key-auth
+    file:make_dir(UserDir),
+    SysDir = ?config(data_dir, Config),
+
+    Parent = self(),
+    DbgFun = fun(ConnRef,Displ,Msg,Lang) -> Parent ! {msg_dbg,{ConnRef,Displ,Msg,Lang}} end,
+    ConnFun = fun(_,_,_) -> Parent ! {connection_pid,self()} end,
+
+    {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SysDir},
+					     {user_dir, UserDir},
+					     {password, "morot"},
+					     {failfun, fun ssh_test_lib:failfun/2},
+					     {connectfun, ConnFun},
+					     {ssh_msg_debug_fun, DbgFun}]),
+    _ConnectionRef =
+	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
+					  {user, "foo"},
+					  {password, "morot"},
+					  {user_dir, UserDir},
+					  {user_interaction, false}]),
+    receive
+	{connection_pid,Server} ->
+	    %% Beware, implementation knowledge:
+	    gen_fsm:send_all_state_event(Server,{ssh_msg_debug,false,<<"Hello">>,<<>>}),
+	    receive
+		{msg_dbg,X={_,false,<<"Hello">>,<<>>}} ->
+		    ct:log("Got expected dbg msg ~p",[X]),
+		    ssh:stop_daemon(Pid);
+		{msg_dbg,X} ->
+		    ct:log("Got bad dbg msg ~p",[X]),
+		    ssh:stop_daemon(Pid),
+		    {fail,"Bad msg received"}
+	    after 3000 ->
+		    ssh:stop_daemon(Pid),
+		    {fail,timeout2}
+	    end
+    after 3000 ->
+	    ssh:stop_daemon(Pid),
+	    {fail,timeout1}
+    end.
+
+%%--------------------------------------------------------------------
+disconnectfun_option_server(Config) ->
+    PrivDir = ?config(priv_dir, Config),
+    UserDir = filename:join(PrivDir, nopubkey), % to make sure we don't use public-key-auth
+    file:make_dir(UserDir),
+    SysDir = ?config(data_dir, Config),
+
+    Parent = self(),
+    DisConnFun = fun(Reason) -> Parent ! {disconnect,Reason} end,
+
+    {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SysDir},
+					     {user_dir, UserDir},
+					     {password, "morot"},
+					     {failfun, fun ssh_test_lib:failfun/2},
+					     {disconnectfun, DisConnFun}]),
+    ConnectionRef =
+	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
+					  {user, "foo"},
+					  {password, "morot"},
+					  {user_dir, UserDir},
+					  {user_interaction, false}]),
+    ssh:close(ConnectionRef),
+    receive
+	{disconnect,Reason} ->
+	    ct:log("Server detected disconnect: ~p",[Reason]),
+	    ssh:stop_daemon(Pid),
+	    ok
+    after 3000 ->
+	    receive
+		X -> ct:log("received ~p",[X])
+	    after 0 -> ok
+	    end,
+	    {fail,"Timeout waiting for disconnect"}
+    end.
+
+%%--------------------------------------------------------------------
+disconnectfun_option_client(Config) ->
+    PrivDir = ?config(priv_dir, Config),
+    UserDir = filename:join(PrivDir, nopubkey), % to make sure we don't use public-key-auth
+    file:make_dir(UserDir),
+    SysDir = ?config(data_dir, Config),
+
+    Parent = self(),
+    DisConnFun = fun(Reason) -> Parent ! {disconnect,Reason} end,
+
+    {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SysDir},
+					     {user_dir, UserDir},
+					     {password, "morot"},
+					     {failfun, fun ssh_test_lib:failfun/2}]),
+    _ConnectionRef =
+	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
+					  {user, "foo"},
+					  {password, "morot"},
+					  {user_dir, UserDir},
+					  {user_interaction, false},
+					  {disconnectfun, DisConnFun}]),
+    ssh:stop_daemon(Pid),
+    receive
+	{disconnect,Reason} ->
+	    ct:log("Client detected disconnect: ~p",[Reason]),
+	    ok
+    after 3000 ->
+	    receive
+		X -> ct:log("received ~p",[X])
+	    after 0 -> ok
+	    end,
+	    {fail,"Timeout waiting for disconnect"}
+    end.
+
+%%--------------------------------------------------------------------
+unexpectedfun_option_server(Config) ->
+    PrivDir = ?config(priv_dir, Config),
+    UserDir = filename:join(PrivDir, nopubkey), % to make sure we don't use public-key-auth
+    file:make_dir(UserDir),
+    SysDir = ?config(data_dir, Config),
+
+    Parent = self(),
+    ConnFun = fun(_,_,_) -> Parent ! {connection_pid,self()} end,
+    UnexpFun = fun(Msg,Peer) ->
+		       Parent ! {unexpected,Msg,Peer,self()},
+		       skip
+	       end,
+
+    {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SysDir},
+					     {user_dir, UserDir},
+					     {password, "morot"},
+					     {failfun, fun ssh_test_lib:failfun/2},
+					     {connectfun, ConnFun},
+					     {unexpectedfun, UnexpFun}]),
+    _ConnectionRef =
+	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
+					  {user, "foo"},
+					  {password, "morot"},
+					  {user_dir, UserDir},
+					  {user_interaction, false}]),
+    receive
+	{connection_pid,Server} ->
+	    %% Beware, implementation knowledge:
+	    Server ! unexpected_message,
+	    receive
+		{unexpected, unexpected_message, {{_,_,_,_},_}, _} -> ok;
+		{unexpected, unexpected_message, Peer, _} -> ct:fail("Bad peer ~p",[Peer]);
+		M = {unexpected, _, _, _} -> ct:fail("Bad msg ~p",[M])
+	    after 3000 ->
+		    ssh:stop_daemon(Pid),
+		    {fail,timeout2}
+	    end
+    after 3000 ->
+	    ssh:stop_daemon(Pid),
+	    {fail,timeout1}
+    end.
+
+%%--------------------------------------------------------------------
+unexpectedfun_option_client(Config) ->
+    PrivDir = ?config(priv_dir, Config),
+    UserDir = filename:join(PrivDir, nopubkey), % to make sure we don't use public-key-auth
+    file:make_dir(UserDir),
+    SysDir = ?config(data_dir, Config),
+
+    Parent = self(),
+    UnexpFun = fun(Msg,Peer) -> 
+		       Parent ! {unexpected,Msg,Peer,self()},
+		       skip
+	       end,
+
+    {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SysDir},
+					     {user_dir, UserDir},
+					     {password, "morot"},
+					     {failfun, fun ssh_test_lib:failfun/2}]),
+    ConnectionRef =
+	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
+					  {user, "foo"},
+					  {password, "morot"},
+					  {user_dir, UserDir},
+					  {user_interaction, false},
+					  {unexpectedfun, UnexpFun}]),
+    %% Beware, implementation knowledge:
+    ConnectionRef ! unexpected_message,
+
+    receive
+	{unexpected, unexpected_message, {{_,_,_,_},_}, ConnectionRef} ->
+	    ok;
+	{unexpected, unexpected_message, Peer, ConnectionRef} ->
+	    ct:fail("Bad peer ~p",[Peer]);
+	M = {unexpected, _, _, _} ->
+	    ct:fail("Bad msg ~p",[M])
+    after 3000 ->
+	    ssh:stop_daemon(Pid),
+	    {fail,timeout}
+    end.
 
 %%--------------------------------------------------------------------
 known_hosts() ->
@@ -723,7 +1282,7 @@ ssh_connect_arg4_timeout(_Config) ->
 
     %% try to connect with a timeout, but "supervise" it
     Client = spawn(fun() ->
-			   T0 = now(),
+			   T0 = erlang:monotonic_time(),
 			   Rc = ssh:connect("localhost",Port,[],Timeout),
 			   ct:log("Client ssh:connect got ~p",[Rc]),
 			   Parent ! {done,self(),Rc,T0}
@@ -732,13 +1291,12 @@ ssh_connect_arg4_timeout(_Config) ->
     %% Wait for client reaction on the connection try:
     receive
 	{done, Client, {error,timeout}, T0} ->
-	    Msp = ms_passed(T0, now()),
+	    Msp = ms_passed(T0),
 	    exit(Server,hasta_la_vista___baby),
 	    Low = 0.9*Timeout,
 	    High =  1.1*Timeout,
 	    ct:log("Timeout limits: ~.4f - ~.4f ms, timeout "
                    "was ~.4f ms, expected ~p ms",[Low,High,Msp,Timeout]),
-	    %%ct:log("Timeout limits: ~p--~p, my timeout was ~p, expected ~p",[Low,High,Msp0,Timeout]),
 	    if
 		Low<Msp, Msp<High -> ok;
 		true -> {fail, "timeout not within limits"}
@@ -757,12 +1315,12 @@ ssh_connect_arg4_timeout(_Config) ->
 	    {fail, "Didn't timeout"}
     end.
 
-%% Help function
-%% N2-N1
-ms_passed(N1={_,_,M1}, N2={_,_,M2}) ->
-    {0,{0,Min,Sec}} = calendar:time_difference(calendar:now_to_local_time(N1),
-					       calendar:now_to_local_time(N2)),
-    1000 * (Min*60 + Sec + (M2-M1)/1000000).
+%% Help function, elapsed milliseconds since T0
+ms_passed(T0) ->
+    %% OTP 18
+    erlang:convert_time_unit(erlang:monotonic_time() - T0,
+			     native,
+			     micro_seconds) / 1000.
 
 %%--------------------------------------------------------------------
 packet_size_zero(Config) ->
@@ -823,57 +1381,114 @@ ssh_daemon_minimal_remote_max_packet_size_option(Config) ->
     ssh:stop_daemon(Server).
     
 %%--------------------------------------------------------------------
+%% This test try every algorithm by connecting to an Erlang server
+preferred_algorithms(Config) ->
+    SystemDir = ?config(data_dir, Config),
+    PrivDir = ?config(priv_dir, Config),
+    UserDir = filename:join(PrivDir, nopubkey), % to make sure we don't use public-key-auth
+    file:make_dir(UserDir),
+
+    {Server, Host, Port} = ssh_test_lib:daemon([{system_dir, SystemDir},
+						{user_dir, UserDir},
+						{user_passwords, [{"vego", "morot"}]},
+						{failfun, fun ssh_test_lib:failfun/2}]),
+    Available = ssh:default_algorithms(),
+    Tests = [[{Tag,[Alg]}] || {Tag, SubAlgs} <- Available,
+			  is_atom(hd(SubAlgs)),
+			  Alg <- SubAlgs]
+	++  [[{Tag,[{T1,[A1]},{T2,[A2]}]}] || {Tag, [{T1,As1},{T2,As2}]} <- Available,
+					      A1 <- As1,
+					      A2 <- As2],
+    ct:log("TESTS: ~p",[Tests]),
+    [connect_exec_channel(Host,Port,PrefAlgs)  || PrefAlgs <- Tests],
+    ssh:stop_daemon(Server).
+
+
+connect_exec_channel(_Host, Port, Algs) ->
+    ct:log("Try ~p",[Algs]),
+    ConnectionRef = ssh_test_lib:connect(Port, [{silently_accept_hosts, true},
+						{user_interaction, false},
+						{user, "vego"},
+						{password, "morot"},
+						{preferred_algorithms,Algs}
+					       ]),
+    chan_exec(ConnectionRef, "2*21.", <<"42\n">>),
+    ssh:close(ConnectionRef).
+
+chan_exec(ConnectionRef, Cmnd, Expected) ->
+    {ok, ChannelId0} = ssh_connection:session_channel(ConnectionRef, infinity),
+    success = ssh_connection:exec(ConnectionRef, ChannelId0,Cmnd, infinity),
+    Data0 = {ssh_cm, ConnectionRef, {data, ChannelId0, 0, Expected}},
+    case ssh_test_lib:receive_exec_result(Data0) of
+	expected ->
+	    ssh_test_lib:receive_exec_end(ConnectionRef, ChannelId0);
+	{unexpected_msg,{ssh_cm, ConnectionRef, {exit_status, ChannelId0, 0}}
+	 = ExitStatus0} ->
+	    ct:pal("0: Collected data ~p", [ExitStatus0]),
+	    ssh_test_lib:receive_exec_result(Data0,
+					     ConnectionRef, ChannelId0);
+	Other0 ->
+	    ct:fail(Other0)
+    end.
+
+%%--------------------------------------------------------------------
 id_string_no_opt_client(Config) ->
-    {Server, Host, Port} = fake_daemon(Config),
-    {error,_} = ssh:connect(Host, Port, []),
+    {Server, _Host, Port} = fake_daemon(Config),
+    {error,_} = ssh:connect("localhost", Port, [], 1000),
     receive
 	{id,Server,"SSH-2.0-Erlang/"++Vsn} ->
 	    true = expected_ssh_vsn(Vsn);
 	{id,Server,Other} ->
 	    ct:fail("Unexpected id: ~s.",[Other])
+    after 5000 ->
+	    {fail,timeout}
     end.
 
 %%--------------------------------------------------------------------
 id_string_own_string_client(Config) ->
-    {Server, Host, Port} = fake_daemon(Config),
-    {error,_} = ssh:connect(Host, Port, [{id_string,"Pelle"}]),
+    {Server, _Host, Port} = fake_daemon(Config),
+    {error,_} = ssh:connect("localhost", Port, [{id_string,"Pelle"}], 1000),
     receive
 	{id,Server,"SSH-2.0-Pelle\r\n"} ->
 	    ok;
 	{id,Server,Other} ->
 	    ct:fail("Unexpected id: ~s.",[Other])
+    after 5000 ->
+	    {fail,timeout}
     end.
 
 %%--------------------------------------------------------------------
 id_string_random_client(Config) ->
-    {Server, Host, Port} = fake_daemon(Config),
-    {error,_} = ssh:connect(Host, Port, [{id_string,random}]),
+    {Server, _Host, Port} = fake_daemon(Config),
+    {error,_} = ssh:connect("localhost", Port, [{id_string,random}], 1000),
     receive
 	{id,Server,Id="SSH-2.0-Erlang"++_} ->
 	    ct:fail("Unexpected id: ~s.",[Id]);
 	{id,Server,Rnd="SSH-2.0-"++_} ->
-	    ct:log("Got ~s.",[Rnd]);
+	    ct:log("Got correct ~s",[Rnd]);
 	{id,Server,Id} ->
 	    ct:fail("Unexpected id: ~s.",[Id])
+    after 5000 ->
+	    {fail,timeout}
     end.
 
 %%--------------------------------------------------------------------
 id_string_no_opt_server(Config) ->
     {_Server, Host, Port} = std_daemon(Config, []),
-    {ok,S1}=gen_tcp:connect(Host,Port,[{active,false}]),
+    {ok,S1}=gen_tcp:connect(Host,Port,[{active,false},{packet,line}]),
     {ok,"SSH-2.0-Erlang/"++Vsn} = gen_tcp:recv(S1, 0, 2000),
     true = expected_ssh_vsn(Vsn).
 
 %%--------------------------------------------------------------------
 id_string_own_string_server(Config) ->
     {_Server, Host, Port} = std_daemon(Config, [{id_string,"Olle"}]),
-    {ok,S1}=gen_tcp:connect(Host,Port,[{active,false}]),
+    {ok,S1}=gen_tcp:connect(Host,Port,[{active,false},{packet,line}]),
     {ok,"SSH-2.0-Olle\r\n"} = gen_tcp:recv(S1, 0, 2000).
 
 %%--------------------------------------------------------------------
 id_string_random_server(Config) ->
     {_Server, Host, Port} = std_daemon(Config, [{id_string,random}]),
-    {ok,S1}=gen_tcp:connect(Host,Port,[{active,false}]),
+    {ok,S1}=gen_tcp:connect(Host,Port,[{active,false},{packet,line}]),
     {ok,"SSH-2.0-"++Rnd} = gen_tcp:recv(S1, 0, 2000),
     case Rnd of
 	"Erlang"++_ -> ct:log("Id=~p",[Rnd]),
@@ -899,8 +1514,10 @@ ssh_connect_negtimeout(Config, Parallel) ->
 					      {failfun, fun ssh_test_lib:failfun/2}]),
     
     {ok,Socket} = gen_tcp:connect(Host, Port, []),
-    ct:pal("And now sleeping 1.2*NegTimeOut (~p ms)...", [round(1.2 * NegTimeOut)]),
-    receive after round(1.2 * NegTimeOut) -> ok end,
+
+    Factor = 2,
+    ct:pal("And now sleeping ~p*NegTimeOut (~p ms)...", [Factor, round(Factor * NegTimeOut)]),
+    ct:sleep(round(Factor * NegTimeOut)),
     
     case inet:sockname(Socket) of
 	{ok,_} -> ct:fail("Socket not closed");
@@ -943,8 +1560,11 @@ ssh_connect_nonegtimeout_connected(Config, Parallel) ->
 	    ct:pal("---Erlang shell start: ~p~n", [ErlShellStart]),
 	    one_shell_op(IO, NegTimeOut),
 	    one_shell_op(IO, NegTimeOut),
-	    ct:pal("And now sleeping 1.2*NegTimeOut (~p ms)...", [round(1.2 * NegTimeOut)]),
-	    receive after round(1.2 * NegTimeOut) -> ok end,
+
+	    Factor = 2,
+	    ct:pal("And now sleeping ~p*NegTimeOut (~p ms)...", [Factor, round(Factor * NegTimeOut)]),
+	    ct:sleep(round(Factor * NegTimeOut)),
+    
 	    one_shell_op(IO, NegTimeOut)
     end,
     exit(Shell, kill).
@@ -986,12 +1606,15 @@ openssh_zlib_basic_test(Config) ->
 
     {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SystemDir},
 					     {user_dir, UserDir},
+					     {preferred_algorithms,[{compression, ['zlib@openssh.com']}]},
 					     {failfun, fun ssh_test_lib:failfun/2}]),
     ConnectionRef =
 	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
 					  {user_dir, UserDir},
 					  {user_interaction, false},
-					  {compression, openssh_zlib}]),
+					  {preferred_algorithms,[{compression, ['zlib@openssh.com',
+										none]}]}
+					 ]),
     ok = ssh:close(ConnectionRef),
     ssh:stop_daemon(Pid).
 
@@ -1069,6 +1692,7 @@ max_sessions(Config, ParallelLogin, Connect0) when is_function(Connect0,2) ->
 		    %% This is expected
 		    %% Now stop one connection and try to open one more
 		    ok = ssh:close(hd(Connections)),
+		    receive after 250 -> ok end, % sleep so the supervisor has time to count down. Not nice...
 		    try Connect(Host,Port)
 		    of
 			_ConnectionRef1 ->
@@ -1089,6 +1713,74 @@ max_sessions(Config, ParallelLogin, Connect0) when is_function(Connect0,2) ->
 	    ssh:stop_daemon(Pid),
 	    {fail,"Too few connections accepted"}
     end.
+
+%%--------------------------------------------------------------------
+ssh_info_print(Config) ->
+    %% Just check that ssh_print:info() crashes
+    PrivDir = ?config(priv_dir, Config),
+    PrintFile = filename:join(PrivDir,info),
+    UserDir = filename:join(PrivDir, nopubkey), % to make sure we don't use public-key-auth
+    file:make_dir(UserDir),
+    SysDir = ?config(data_dir, Config),
+
+    Parent = self(),
+    UnexpFun = fun(Msg,_Peer) ->
+		       Parent ! {unexpected,Msg,self()},
+		       skip
+	       end,
+    ConnFun = fun(_,_,_) -> Parent ! {connect,self()} end,
+
+    {DaemonRef, Host, Port} = 
+	ssh_test_lib:daemon([{system_dir, SysDir},
+			     {user_dir, UserDir},
+			     {password, "morot"},
+			     {unexpectedfun, UnexpFun},
+			     {connectfun, ConnFun},
+			     {failfun, fun ssh_test_lib:failfun/2}]),
+    ClientConnRef1 =
+	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
+					  {user, "foo"},
+					  {password, "morot"},
+					  {user_dir, UserDir},
+					  {unexpectedfun, UnexpFun},
+					  {user_interaction, false}]),
+    ClientConnRef2 =
+	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
+					  {user, "foo"},
+					  {password, "morot"},
+					  {user_dir, UserDir},
+					  {unexpectedfun, UnexpFun},
+					  {user_interaction, false}]),
+    receive
+	{connect,DaemonConnRef} ->
+	    ct:log("DaemonRef=~p, DaemonConnRef=~p, ClientConnRefs=~p",[DaemonRef, DaemonConnRef, 
+									[ClientConnRef1,ClientConnRef2]
+								       ])
+    after 2000 ->
+	    ok
+    end,
+
+    {ok,D} = file:open(PrintFile, write),
+    ssh_info:print(D),
+    ok = file:close(D),
+
+    {ok,Bin} = file:read_file(PrintFile),
+    ct:log("~s",[Bin]),
+
+    receive
+	{unexpected, Msg, Pid} ->
+	    ct:log("~p got unexpected msg ~p",[Pid,Msg]),
+	    ct:log("process_info(~p) = ~n~p",[Pid,process_info(Pid)]),
+	    ok = ssh:close(ClientConnRef1),
+	    ok = ssh:close(ClientConnRef2),
+	    ok = ssh:stop_daemon(DaemonRef),
+	    {fail,"unexpected msg"}
+    after 1000 ->
+	    ok = ssh:close(ClientConnRef1),
+	    ok = ssh:close(ClientConnRef2),
+	    ok = ssh:stop_daemon(DaemonRef)
+    end.
+
 
 %%--------------------------------------------------------------------
 %% Internal functions ------------------------------------------------
@@ -1184,13 +1876,14 @@ expected_ssh_vsn(Str) ->
 	_:_ -> true %% ssh not started so we dont't know
     end.
 	    
-	    
+
 fake_daemon(_Config) ->
     Parent = self(),
     %% start the server
     Server = spawn(fun() ->
-			   {ok,Sl} = gen_tcp:listen(0,[]),
+			   {ok,Sl} = gen_tcp:listen(0,[{packet,line}]),
 			   {ok,{Host,Port}} = inet:sockname(Sl),
+			   ct:log("fake_daemon listening on ~p:~p~n",[Host,Port]),
 			   Parent ! {sockname,self(),Host,Port},
 			   Rsa = gen_tcp:accept(Sl),
 			   ct:log("Server gen_tcp:accept got ~p",[Rsa]),
@@ -1204,3 +1897,18 @@ fake_daemon(_Config) ->
 	{sockname,Server,ServerHost,ServerPort} -> {Server, ServerHost, ServerPort}
     end.
 
+%% get_kex_init - helper function to get key_exchange_init_msg
+get_kex_init(Conn) ->
+    %% First, validate the key exchange is complete (StateName == connected)
+    {connected,S} = sys:get_state(Conn),
+    %% Next, walk through the elements of the #state record looking
+    %% for the #ssh_msg_kexinit record. This method is robust against
+    %% changes to either record. The KEXINIT message contains a cookie
+    %% unique to each invocation of the key exchange procedure (RFC4253)
+    SL = tuple_to_list(S),
+    case lists:keyfind(ssh_msg_kexinit, 1, SL) of
+	false ->
+	    throw(not_found);
+	KexInit ->
+	    KexInit
+    end.

@@ -3,16 +3,17 @@
 %% 
 %% Copyright Ericsson AB 2005-2012. All Rights Reserved.
 %% 
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
-%% 
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %% 
 %% %CopyrightEnd%
 %%
@@ -71,6 +72,11 @@ test_size(Config) when is_list(Config) ->
     4 = do_test_size(#{}),
     32 = do_test_size(#{b => 2,c => 3,txt => "hello world"}),
 
+    true = do_test_size(maps:from_list([{I,I}||I<-lists:seq(1,256)])) >= map_size_lower_bound(256),
+    true = do_test_size(maps:from_list([{I,I}||I<-lists:seq(1,4096)])) >= map_size_lower_bound(4096),
+    true = do_test_size(maps:from_list([{I,I}||I<-lists:seq(1,254)])) >= map_size_lower_bound(254),
+    true = do_test_size(maps:from_list([{I,I}||I<-lists:seq(1,239)])) >= map_size_lower_bound(239),
+
     %% Test internal consistency of sizes, but without testing
     %% exact sizes.
     Const = id(42),
@@ -92,14 +98,14 @@ test_size(Config) when is_list(Config) ->
 
     %% Test shared data structures.
     do_test_size([ConsCell1|ConsCell1],
-		 3*ConsCellSz,
-		 2*ConsCellSz),
+        	 3*ConsCellSz,
+        	 2*ConsCellSz),
     do_test_size(fun() -> {ConsCell1,ConsCell2} end,
-		 FunSz2 + 2*ConsCellSz,
-		 FunSz2 + ConsCellSz),
+        	 FunSz2 + 2*ConsCellSz,
+        	 FunSz2 + ConsCellSz),
     do_test_size({SimplestFun,SimplestFun},
-		 2*FunSz0+do_test_size({a,b}),
-		 FunSz0+do_test_size({a,b})),
+        	 2*FunSz0+do_test_size({a,b}),
+        	 FunSz0+do_test_size({a,b})),
 
     M = id(#{ "atom" => first, i => 0}),
     do_test_size([M,M#{ "atom" := other },M#{i := 42}],54,32),
@@ -112,6 +118,13 @@ do_test_size(Term) ->
 do_test_size(Term, FlatSz, Sz) ->
     FlatSz = erts_debug:flat_size(Term),
     Sz = erts_debug:size(Term).
+
+map_size_lower_bound(N) ->
+    %% this est. is a bit lower that actual lower bound
+    %% number of internal nodes
+    T = (N - 1) div 15,
+    %% total words
+    2 + 17 * T + 2 * N.
 
 flat_size_big(Config) when is_list(Config) ->
     %% Build a term whose external size only fits in a big num (on 32-bit CPU).

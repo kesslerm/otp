@@ -3,16 +3,17 @@
  *
  * Copyright Ericsson AB 2004-2014. All Rights Reserved.
  *
- * The contents of this file are subject to the Erlang Public License,
- * Version 1.1, (the "License"); you may not use this file except in
- * compliance with the License. You should have received a copy of the
- * Erlang Public License along with this software. If not, it can be
- * retrieved online at http://www.erlang.org/.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Software distributed under the License is distributed on an "AS IS"
- * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
- * the License for the specific language governing rights and limitations
- * under the License.
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  * %CopyrightEnd%
  */
@@ -250,6 +251,8 @@ gc_bif_interface_0(nbif_check_get_msg, hipe_check_get_msg)
 nocons_nofail_primop_interface_0(nbif_emulate_fpe, hipe_emulate_fpe)
 #endif
 
+noproc_primop_interface_1(nbif_emasculate_binary, hipe_emasculate_binary)
+
 /*
  * SMP-specific stuff
  */
@@ -277,7 +280,10 @@ ifelse($1,list_to_binary_1,hipe_wrapper_list_to_binary_1,
 ifelse($1,iolist_to_binary_1,hipe_wrapper_iolist_to_binary_1,
 ifelse($1,binary_list_to_bin_1,hipe_wrapper_binary_list_to_bin_1,
 ifelse($1,list_to_bitstring_1,hipe_wrapper_list_to_bitstring_1,
-$1)))))))))))')
+ifelse($1,send_2,hipe_wrapper_send_2,
+ifelse($1,send_3,hipe_wrapper_send_3,
+ifelse($1,ebif_bang_2,hipe_wrapper_ebif_bang_2,
+$1))))))))))))))')
 
 define(BIF_LIST,`standard_bif_interface_$3(nbif_$4, CFUN($4))')
 include(TARGET/`erl_bif_list.h')
