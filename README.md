@@ -4,7 +4,7 @@
 | Production   | R16    | [`basho-otp-16`](http://github.com/basho/otp/tree/basho-otp-16) | [`OTP_R16B02_basho8`](http://github.com/basho/otp/tree/OTP_R16B02_basho8) | [`OTP_R16B02_basho8`](http://github.com/basho/otp/tree/OTP_R16B02_basho8) |
 | Retired      | R15    | [`basho-otp-15`](http://github.com/basho/otp/tree/basho-otp-15) | [`basho_OTP_R15B01p`](http://github.com/basho/otp/tree/basho_OTP_R15B01p) | [`OTP_R15B01_basho1`](http://github.com/basho/otp/tree/OTP_R15B01_basho1) |
 | Active       | OTP-17 | [`basho-otp-17`](http://github.com/basho/otp/tree/basho-otp-17) | _n/a_ | [`basho-otp-17`](http://github.com/basho/otp/tree/basho-otp-17) |
-| Experimental | OTP-18 | [`basho-otp-18`](http://github.com/basho/otp/tree/basho-otp-18) | _n/a_ | [`OTP-18.0-rc2`](http://github.com/basho/otp/tree/OTP-18.0) |
+| Experimental | OTP-18 | [`basho-otp-18`](http://github.com/basho/otp/tree/basho-otp-18) | _n/a_ | [`OTP-18.0`](http://github.com/basho/otp/tree/OTP-18.0) |
 
 ##Basho Erlang/OTP
 
