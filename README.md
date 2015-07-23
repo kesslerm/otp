@@ -84,9 +84,9 @@ of interest to us.
 
 Everything in Erlang/OTP, whether part of the original distribution or a
 contribution of ours, is subject to the terms of the license applied to it
-in Ericsson's repository. Through OTP-17, that was the
-[Erlang Public License][3]. Beginning with OTP-18, the sources are now
-subject to the terms of the [Apache License, Version 2.0](LICENSE.txt).
+in Ericsson's repository. Through OTP-17, that's the
+[Erlang Public License][3]. Beginning with OTP-18, it's the
+[Apache License, Version 2.0](LICENSE.txt).
 
 
   [1]: http://www.basho.com
