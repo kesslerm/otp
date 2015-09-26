@@ -4,16 +4,17 @@
 %%
 %% Copyright Ericsson AB 1996-2015. All Rights Reserved.
 %%
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
 %%
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %%
 %% %CopyrightEnd%
 %%
@@ -30,11 +31,7 @@
 -export([is_guard_expr/1]).
 -export([bool_option/4,value_option/3,value_option/7]).
 
--export([modify_line/2]).
-
 -import(lists, [member/2,map/2,foldl/3,foldr/3,mapfoldl/3,all/2,reverse/1]).
-
--deprecated([{modify_line, 2, next_major_release}]).
 
 %% bool_option(OnOpt, OffOpt, Default, Options) -> boolean().
 %% value_option(Flag, Default, Options) -> Value.
@@ -78,7 +75,7 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 %%-define(DEBUGF(X,Y), io:format(X, Y)).
 -define(DEBUGF(X,Y), void).
 
--type line() :: erl_anno:line().     % a convenient alias
+-type line() :: erl_anno:anno().     % a convenient alias
 -type fa()   :: {atom(), arity()}.   % function+arity
 -type ta()   :: {atom(), arity()}.   % type+arity
 
@@ -237,6 +234,9 @@ format_error({removed, MFA, ReplacementMFA, Rel}) ->
 		  "use ~s", [format_mfa(MFA), Rel, format_mfa(ReplacementMFA)]);
 format_error({removed, MFA, String}) when is_list(String) ->
     io_lib:format("~s: ~s", [format_mfa(MFA), String]);
+format_error({removed_type, MNA, ReplacementMNA, Rel}) ->
+    io_lib:format("the type ~s was removed in ~s; use ~s instead",
+                  [format_mna(MNA), Rel, format_mna(ReplacementMNA)]);
 format_error({obsolete_guard, {F, A}}) ->
     io_lib:format("~p/~p obsolete", [F, A]);
 format_error({too_many_arguments,Arity}) ->
@@ -411,6 +411,9 @@ format_mfa({M, F, A}) when is_integer(A) ->
 
 format_mf(M, F, ArityString) when is_atom(M), is_atom(F) ->
     atom_to_list(M) ++ ":" ++ atom_to_list(F) ++ "/" ++ ArityString.
+
+format_mna({M, N, A}) when is_integer(A) ->
+    atom_to_list(M) ++ ":" ++ atom_to_list(N) ++ gen_type_paren(A).
 
 format_where(L) when is_integer(L) ->
     io_lib:format("(line ~p)", [L]);
@@ -3481,13 +3484,6 @@ vt_no_unused(Vt) -> [V || {_,{_,U,_L}}=V <- Vt, U =/= unused].
 copy_expr(Expr, Anno) ->
     erl_parse:map_anno(fun(_A) -> Anno end, Expr).
 
-%% modify_line(Form, Fun) -> Form
-%% modify_line(Expression, Fun) -> Expression
-%%  Applies Fun to each line number occurrence.
-
-modify_line(T, F0) ->
-    erl_parse:map_anno(F0, T).
-
 %% Check a record_info call. We have already checked that it is not
 %% shadowed by an import.
 
@@ -3556,6 +3552,7 @@ deprecated_function(Line, M, F, As, St) ->
 	    St
     end.
 
+-dialyzer({no_match, deprecated_type/5}).
 deprecated_type(L, M, N, As, St) ->
     NAs = length(As),
     case otp_internal:obsolete_type(M, N, NAs) of
@@ -3566,6 +3563,8 @@ deprecated_type(L, M, N, As, St) ->
                 false ->
                     St
             end;
+        {removed, Replacement, Rel} ->
+            add_warning(L, {removed_type, {M,N,NAs}, Replacement, Rel}, St);
         no ->
             St
     end.

@@ -4,16 +4,17 @@
 %%
 %% Copyright Ericsson AB 1996-2015. All Rights Reserved.
 %%
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
 %%
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %%
 %% %CopyrightEnd%
 %%
@@ -125,22 +126,19 @@ top_type_100 -> type_200                  : '$1'.
 top_type_100 -> type_200 '|' top_type_100 : lift_unions('$1','$3').
 
 type_200 -> type_300 '..' type_300        : {type, ?anno('$1'), range,
-                                             [skip_paren('$1'),
-                                              skip_paren('$3')]}.
+                                             ['$1', '$3']}.
 type_200 -> type_300                      : '$1'.
 
-type_300 -> type_300 add_op type_400      : ?mkop2(skip_paren('$1'),
-                                                   '$2', skip_paren('$3')).
+type_300 -> type_300 add_op type_400      : ?mkop2('$1', '$2', '$3').
 type_300 -> type_400                      : '$1'.
 
-type_400 -> type_400 mult_op type_500     : ?mkop2(skip_paren('$1'),
-                                                   '$2', skip_paren('$3')).
+type_400 -> type_400 mult_op type_500     : ?mkop2('$1', '$2', '$3').
 type_400 -> type_500                      : '$1'.
 
-type_500 -> prefix_op type                : ?mkop1('$1', skip_paren('$2')).
+type_500 -> prefix_op type                : ?mkop1('$1', '$2').
 type_500 -> type                          : '$1'.
 
-type -> '(' top_type ')'                  : {paren_type, ?anno('$2'), ['$2']}.
+type -> '(' top_type ')'                  : '$2'.
 type -> var                               : '$1'.
 type -> atom                              : '$1'.
 type -> atom '(' ')'                      : build_gen_type('$1').
@@ -524,13 +522,9 @@ Erlang code.
 -export([normalise/1,abstract/1,tokens/1,tokens/2]).
 -export([abstract/2]).
 -export([inop_prec/1,preop_prec/1,func_prec/0,max_prec/0]).
+-export([type_inop_prec/1,type_preop_prec/1]).
 -export([map_anno/2, fold_anno/3, mapfold_anno/3,
          new_anno/1, anno_to_term/1, anno_from_term/1]).
--export([set_line/2,get_attribute/2,get_attributes/1]).
-
--deprecated([{set_line, 2, next_major_release},
-             {get_attribute, 2, next_major_release},
-             {get_attributes, 1, next_major_release}]).
 
 %% The following directive is needed for (significantly) faster compilation
 %% of the generated .erl file by the HiPE compiler.  Please do not remove.
@@ -671,11 +665,6 @@ lift_unions(T1, {type, _Aa, union, List}) ->
 lift_unions(T1, T2) ->
     {type, ?anno(T1), union, [T1, T2]}.
 
-skip_paren({paren_type,_A,[Type]}) ->
-    skip_paren(Type);
-skip_paren(Type) ->
-    Type.
-
 build_gen_type({atom, Aa, tuple}) ->
     {type, Aa, tuple, any};
 build_gen_type({atom, Aa, map}) ->
@@ -687,7 +676,7 @@ build_gen_type({atom, Aa, Name}) ->
 build_bin_type([{var, _, '_'}|Left], Int) ->
     build_bin_type(Left, Int);
 build_bin_type([], Int) ->
-    skip_paren(Int);
+    Int;
 build_bin_type([{var, Aa, _}|_], _) ->
     ret_err(Aa, "Bad binary type").
 
@@ -807,8 +796,7 @@ record_fields([{typed,Expr,TypeInfo}|Fields]) ->
 	    {atom, Aa, _} ->
                 case has_undefined(TypeInfo) of
                     false ->
-                        TypeInfo2 = maybe_add_paren(TypeInfo),
-                        lift_unions(abstract2(undefined, Aa), TypeInfo2);
+                        lift_unions(abstract2(undefined, Aa), TypeInfo);
                     true ->
                         TypeInfo
                 end
@@ -822,17 +810,10 @@ has_undefined({atom,_,undefined}) ->
     true;
 has_undefined({ann_type,_,[_,T]}) ->
     has_undefined(T);
-has_undefined({paren_type,_,[T]}) ->
-    has_undefined(T);
 has_undefined({type,_,union,Ts}) ->
     lists:any(fun has_undefined/1, Ts);
 has_undefined(_) ->
     false.
-
-maybe_add_paren({ann_type,A,T}) ->
-    {paren_type,A,[{ann_type,A,T}]};
-maybe_add_paren(T) ->
-    T.
 
 term(Expr) ->
     try normalise(Expr)
@@ -1099,27 +1080,38 @@ func_prec() -> {800,700}.
 
 max_prec() -> 900.
 
-%%% [Experimental]. The parser just copies the attributes of the
-%%% scanner tokens to the abstract format. This design decision has
-%%% been hidden to some extent: use set_line() and get_attribute() to
-%%% access the second element of (almost all) of the abstract format
-%%% tuples. A typical use is to negate line numbers to prevent the
-%%% compiler from emitting warnings and errors. The second element can
-%%% (of course) be set to any value, but then these functions no
-%%% longer apply. To get all present attributes as a property list
-%%% get_attributes() should be used.
+-type prec() :: non_neg_integer().
 
--compile({nowarn_deprecated_function,{erl_scan,set_attribute,3}}).
-set_line(L, F) ->
-    erl_scan:set_attribute(line, L, F).
+-type type_inop() :: '::' | '|' | '..' | '+' | '-' | 'bor' | 'bxor'
+                   | 'bsl' | 'bsr' | '*' | '/' | 'div' | 'rem' | 'band'.
 
--compile({nowarn_deprecated_function,{erl_scan,attributes_info,2}}).
-get_attribute(L, Name) ->
-    erl_scan:attributes_info(L, Name).
+-type type_preop() :: '+' | '-' | 'bnot' | '#'.
 
--compile({nowarn_deprecated_function,{erl_scan,attributes_info,1}}).
-get_attributes(L) ->
-    erl_scan:attributes_info(L).
+-spec type_inop_prec(type_inop()) -> {prec(), prec(), prec()}.
+
+type_inop_prec('=') -> {150,100,100};
+type_inop_prec('::') -> {160,150,150};
+type_inop_prec('|') -> {180,170,170};
+type_inop_prec('..') -> {300,200,300};
+type_inop_prec('+') -> {400,400,500};
+type_inop_prec('-') -> {400,400,500};
+type_inop_prec('bor') -> {400,400,500};
+type_inop_prec('bxor') -> {400,400,500};
+type_inop_prec('bsl') -> {400,400,500};
+type_inop_prec('bsr') -> {400,400,500};
+type_inop_prec('*') -> {500,500,600};
+type_inop_prec('/') -> {500,500,600};
+type_inop_prec('div') -> {500,500,600};
+type_inop_prec('rem') -> {500,500,600};
+type_inop_prec('band') -> {500,500,600};
+type_inop_prec('#') -> {800,700,800}.
+
+-spec type_preop_prec(type_preop()) -> {prec(), prec()}.
+
+type_preop_prec('+') -> {600,700};
+type_preop_prec('-') -> {600,700};
+type_preop_prec('bnot') -> {600,700};
+type_preop_prec('#') -> {700,800}.
 
 -spec map_anno(Fun, Abstr) -> NewAbstr when
       Fun :: fun((Anno) -> Anno),

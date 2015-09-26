@@ -3,16 +3,17 @@
  *
  * Copyright Ericsson AB 1996-2014. All Rights Reserved.
  *
- * The contents of this file are subject to the Erlang Public License,
- * Version 1.1, (the "License"); you may not use this file except in
- * compliance with the License. You should have received a copy of the
- * Erlang Public License along with this software. If not, it can be
- * retrieved online at http://www.erlang.org/.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Software distributed under the License is distributed on an "AS IS"
- * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
- * the License for the specific language governing rights and limitations
- * under the License.
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  * %CopyrightEnd%
  */
@@ -731,19 +732,11 @@ Eterm erts_dsend_export_trap_context(Process* p, ErtsSendContext* ctx)
     Binary* ctx_bin = erts_create_magic_binary(sizeof(struct exported_ctx),
 					       erts_dsend_context_dtor);
     struct exported_ctx* dst = ERTS_MAGIC_BIN_DATA(ctx_bin);
-    Uint ctl_size = !HALFWORD_HEAP ? 0 : (arityval(ctx->ctl_heap[0]) + 1);
-    Eterm* hp = HAlloc(p, ctl_size + PROC_BIN_SIZE);
+    Eterm* hp = HAlloc(p, PROC_BIN_SIZE);
 
     sys_memcpy(&dst->ctx, ctx, sizeof(ErtsSendContext));
     ASSERT(ctx->dss.ctl == make_tuple(ctx->ctl_heap));
-#if !HALFWORD_HEAP
     dst->ctx.dss.ctl = make_tuple(dst->ctx.ctl_heap);
-#else
-    /* Must put control tuple in low mem */
-    sys_memcpy(hp, ctx->ctl_heap,  ctl_size*sizeof(Eterm));
-    dst->ctx.dss.ctl = make_tuple(hp);
-    hp += ctl_size;
-#endif
     if (ctx->dss.acmp) {
 	sys_memcpy(&dst->acm, ctx->dss.acmp, sizeof(ErtsAtomCacheMap));
 	dst->ctx.dss.acmp = &dst->acm;
@@ -1149,6 +1142,7 @@ int erts_net_message(Port *prt,
     DeclareTmpHeapNoproc(ctl_default,DIST_CTL_DEFAULT_SIZE);
     Eterm* ctl = ctl_default;
     ErlOffHeap off_heap;
+    ErtsHeapFactory factory;
     Eterm* hp;
     Sint type;
     Eterm token;
@@ -1225,7 +1219,8 @@ int erts_net_message(Port *prt,
     }
     hp = ctl;
 
-    arg = erts_decode_dist_ext(&hp, &off_heap, &ede);
+    erts_factory_static_init(&factory, ctl, ctl_len, &off_heap);
+    arg = erts_decode_dist_ext(&factory, &ede);
     if (is_non_value(arg)) {
 #ifdef ERTS_DIST_MSG_DBG
 	erts_fprintf(stderr, "DIST MSG DEBUG: erts_dist_ext_size(CTL) failed:\n");
@@ -2058,9 +2053,9 @@ dist_port_commandv(Port *prt, ErtsDistOutputBuf *obuf)
 }
 
 
-#if defined(ARCH_64) && !HALFWORD_HEAP
+#if defined(ARCH_64)
 #define ERTS_PORT_REDS_MASK__ 0x003fffffffffffffL
-#elif defined(ARCH_32) || HALFWORD_HEAP
+#elif defined(ARCH_32)
 #define ERTS_PORT_REDS_MASK__ 0x003fffff
 #else
 #  error "Ohh come on ... !?!"
@@ -2086,6 +2081,7 @@ erts_dist_command(Port *prt, int reds_limit)
     DistEntry *dep = prt->dist_entry;
     Uint (*send)(Port *prt, ErtsDistOutputBuf *obuf);
     erts_aint32_t sched_flags;
+    ErtsSchedulerData *esdp = erts_get_scheduler_data();
 
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
 
@@ -2140,12 +2136,12 @@ erts_dist_command(Port *prt, int reds_limit)
 	    ErtsDistOutputBuf *fob;
 
 	    size = (*send)(prt, foq.first);
+	    esdp->io.out += (Uint64) size;
 #ifdef ERTS_RAW_DIST_MSG_DBG
 	    erts_fprintf(stderr, ">> ");
 	    bw(foq.first->extp, size);
 #endif
 	    reds += ERTS_PORT_REDS_DIST_CMD_DATA(size);
-	    erts_smp_atomic_add_nob(&erts_bytes_out, size);
 	    fob = foq.first;
 	    obufsize += size_obuf(fob);
 	    foq.first = foq.first->next;
@@ -2225,12 +2221,12 @@ erts_dist_command(Port *prt, int reds_limit)
 	    ASSERT(&oq.first->data[0] <= oq.first->extp
 		   && oq.first->extp < oq.first->ext_endp);
 	    size = (*send)(prt, oq.first);
+	    esdp->io.out += (Uint64) size;
 #ifdef ERTS_RAW_DIST_MSG_DBG
 	    erts_fprintf(stderr, ">> ");
 	    bw(oq.first->extp, size);
 #endif
 	    reds += ERTS_PORT_REDS_DIST_CMD_DATA(size);
-	    erts_smp_atomic_add_nob(&erts_bytes_out, size);
 	    fob = oq.first;
 	    obufsize += size_obuf(fob);
 	    oq.first = oq.first->next;
@@ -2522,7 +2518,7 @@ info_dist_entry(int to, void *arg, DistEntry *dep, int visible, int connected)
 
   erts_print(to, arg, "Name: %T", dep->sysname);
 #ifdef DEBUG
-  erts_print(to, arg, " (refc=%d)", erts_refc_read(&dep->refc, 1));
+  erts_print(to, arg, " (refc=%d)", erts_refc_read(&dep->refc, 0));
 #endif
   erts_print(to, arg, "\n");
   if (!connected && is_nil(dep->cid)) {

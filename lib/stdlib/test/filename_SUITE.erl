@@ -3,16 +3,17 @@
 %% 
 %% Copyright Ericsson AB 1997-2014. All Rights Reserved.
 %% 
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
-%% 
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %% 
 %% %CopyrightEnd%
 %%
@@ -96,20 +97,11 @@ absname(Config) when is_list(Config) ->
 	    
 	    ?line file:set_cwd(Cwd),
 	    ok;
-	Type ->
-	    case Type of
-		{unix, _} ->
-		    ?line ok = file:set_cwd("/usr"),
-		    ?line "/usr/foo" = filename:absname(foo),
-		    ?line "/usr/foo" = filename:absname("foo"),
-		    ?line "/usr/../ebin" = filename:absname("../ebin");
-		{ose, _} ->
-		    ?line ok = file:set_cwd("/romfs"),
-		    ?line "/romfs/foo" = filename:absname(foo),
-		    ?line "/romfs/foo" = filename:absname("foo"),
-		    ?line "/romfs/../ebin" = filename:absname("../ebin")
-	    end,
-	    
+	{unix, _} ->
+            ?line ok = file:set_cwd("/usr"),
+            ?line "/usr/foo" = filename:absname(foo),
+            ?line "/usr/foo" = filename:absname("foo"),
+            ?line "/usr/../ebin" = filename:absname("../ebin"),
 	    ?line file:set_cwd("/"),
 	    ?line "/foo" = filename:absname(foo),
 	    ?line "/foo" = filename:absname("foo"),
@@ -493,18 +485,10 @@ absname_bin(Config) when is_list(Config) ->
 	    
 	    ?line file:set_cwd(Cwd),
 	    ok;
-	Type ->
-	    case Type of
-		{unix,_} ->
-		    ?line ok = file:set_cwd(<<"/usr">>),
-		    ?line <<"/usr/foo">> = filename:absname(<<"foo">>),
-		    ?line <<"/usr/../ebin">> = filename:absname(<<"../ebin">>);
-		{ose,_} ->
-		    ?line ok = file:set_cwd(<<"/romfs">>),
-		    ?line <<"/romfs/foo">> = filename:absname(<<"foo">>),
-		    ?line <<"/romfs/../ebin">> = filename:absname(<<"../ebin">>)
-	    end,
-	    
+	{unix, _} ->
+            ?line ok = file:set_cwd(<<"/usr">>),
+            ?line <<"/usr/foo">> = filename:absname(<<"foo">>),
+            ?line <<"/usr/../ebin">> = filename:absname(<<"../ebin">>),
 	    ?line file:set_cwd(<<"/">>),
 	    ?line <<"/foo">> = filename:absname(<<"foo">>),
 	    ?line <<"/../ebin">> = filename:absname(<<"../ebin">>),

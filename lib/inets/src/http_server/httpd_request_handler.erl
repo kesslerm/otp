@@ -3,16 +3,17 @@
 %% 
 %% Copyright Ericsson AB 1997-2015. All Rights Reserved.
 %% 
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
 %%
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %%
 %% %CopyrightEnd%
 %%
@@ -29,7 +30,7 @@
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 terminate/2, code_change/3]).
+	 terminate/2, code_change/3, format_status/2]).
 
 -include("httpd.hrl").
 -include("http_internal.hrl").
@@ -309,6 +310,18 @@ do_terminate(#state{mod = ModData} = State) ->
     cancel_request_timeout(State),
     httpd_socket:close(ModData#mod.socket_type, ModData#mod.socket).
 
+format_status(normal, [_, State]) ->
+    [{data, [{"StateData", State}]}];  
+format_status(terminate, [_, State]) ->
+    Mod = (State#state.mod),
+    case Mod#mod.socket_type of
+	ip_comm ->
+	    [{data, [{"StateData", State}]}];  
+	{essl, _} ->
+	    %% Do not print ssl options in superviosr reports
+	    [{data, [{"StateData", 
+		      State#state{mod = Mod#mod{socket_type = 'TLS'}}}]}]
+    end.
 
 %%--------------------------------------------------------------------
 %% code_change(OldVsn, State, Extra) -> {ok, NewState}

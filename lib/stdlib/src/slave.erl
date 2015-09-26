@@ -3,16 +3,17 @@
 %% 
 %% Copyright Ericsson AB 1996-2013. All Rights Reserved.
 %% 
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
-%% 
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %% 
 %% %CopyrightEnd%
 %%
@@ -288,10 +289,7 @@ register_unique_name(Number) ->
 %% no need to use rsh.
 
 mk_cmd(Host, Name, Args, Waiter, Prog0) ->
-    Prog = case os:type() of
-	       {ose,_} -> mk_ose_prog(Prog0);
-	       _ -> quote_progname(Prog0)
-	   end,
+    Prog = quote_progname(Prog0),
     BasicCmd = lists:concat([Prog,
 			     " -detached -noinput -master ", node(),
 			     " ", long_or_short(), Name, "@", Host,
@@ -310,24 +308,6 @@ mk_cmd(Host, Name, Args, Waiter, Prog0) ->
 		    Other
 	    end
     end.
-
-%% On OSE we have to pass the beam arguments directory to the slave
-%% process. To find out what arguments that should be passed on we
-%% make an assumption. All arguments after the last "--" should be
-%% skipped. So given these arguments:
-%%     -Muycs256 -A 1 -- -root /mst/ -progname beam.debug.smp -- -home /mst/ -- -kernel inetrc '"/mst/inetrc.conf"' -- -name test@localhost
-%% we send
-%%     -Muycs256 -A 1 -- -root /mst/ -progname beam.debug.smp -- -home /mst/ -- -kernel inetrc '"/mst/inetrc.conf"' --
-%% to the slave with whatever other args that are added in mk_cmd.
-mk_ose_prog(Prog) ->
-    SkipTail = fun("--",[]) ->
-		       ["--"];
-		  (_,[]) ->
-		       [];
-		  (Arg,Args) ->
-		       [Arg," "|Args]
-	       end,
-    [Prog,tl(lists:foldr(SkipTail,[],erlang:system_info(emu_args)))].
 
 %% This is an attempt to distinguish between spaces in the program
 %% path and spaces that separate arguments. The program is quoted to

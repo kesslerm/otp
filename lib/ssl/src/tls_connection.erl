@@ -3,16 +3,17 @@
 %%
 %% Copyright Ericsson AB 2007-2015. All Rights Reserved.
 %%
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
 %%
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %%
 %% %CopyrightEnd%
 %%
@@ -53,7 +54,7 @@
 %% Alert and close handling
 -export([send_alert/2, handle_own_alert/4, handle_close_alert/3,
 	 handle_normal_shutdown/3, handle_unexpected_message/3,
-	 workaround_transport_delivery_problems/2, alert_user/6, alert_user/9
+	 close/5, alert_user/6, alert_user/9
 	]).
 
 %% Data handling
@@ -392,6 +393,7 @@ initial_state(Role, Host, Port, Socket, {SSLOptions, SocketOptions, Tracker}, Us
 	   user_data_buffer = <<>>,
 	   session_cache_cb = SessionCacheCb,
 	   renegotiation = {false, first},
+	   allow_renegotiate = SSLOptions#ssl_options.client_renegotiation,
 	   start_or_recv_from = undefined,
 	   send_queue = queue:new(),
 	   protocol_cb = ?MODULE,
@@ -922,8 +924,7 @@ handle_own_alert(Alert, Version, StateName,
     try %% Try to tell the other side
 	{BinMsg, _} =
 	ssl_alert:encode(Alert, Version, ConnectionStates),
-	Transport:send(Socket, BinMsg),
-	workaround_transport_delivery_problems(Socket, Transport)
+	Transport:send(Socket, BinMsg)
     catch _:_ ->  %% Can crash if we are in a uninitialized state
 	    ignore
     end,
@@ -975,21 +976,57 @@ invalidate_session(client, Host, Port, Session) ->
 invalidate_session(server, _, Port, Session) ->
     ssl_manager:invalidate_session(Port, Session).
 
-workaround_transport_delivery_problems(Socket, gen_tcp = Transport) ->
+%% User downgrades connection
+%% When downgrading an TLS connection to a transport connection
+%% we must recive the close message before releasing the 
+%% transport socket.
+close({close, {Pid, Timeout}}, Socket, Transport, ConnectionStates, Check) when is_pid(Pid) -> 
+    ssl_socket:setopts(Transport, Socket, [{active, false}, {packet, ssl_tls}]),
+    case Transport:recv(Socket, 0, Timeout) of
+	{ok, {ssl_tls, Socket, ?ALERT, Version,  Fragment}} ->
+	    case tls_record:decode_cipher_text(#ssl_tls{type = ?ALERT,
+							version = Version,
+							fragment = Fragment
+						       }, ConnectionStates, Check) of
+		{#ssl_tls{fragment = Plain}, _} ->
+		    [Alert| _] = decode_alerts(Plain),
+		    downgrade(Alert, Transport, Socket, Pid)
+	    end;
+	{error, timeout} ->
+	    {error, timeout};
+	_ ->
+	    {error, no_tls_close}
+    end;
+%% User closes or recursive call!
+close({close, Timeout}, Socket, Transport = gen_tcp, _,_) ->
+    ssl_socket:setopts(Transport, Socket, [{active, false}]),
+    Transport:shutdown(Socket, write),
+    _ = Transport:recv(Socket, 0, Timeout),
+    ok;
+%% Peer closed socket
+close({shutdown, transport_closed}, Socket, Transport = gen_tcp, ConnectionStates, Check) ->
+    close({close, 0}, Socket, Transport, ConnectionStates, Check);
+%% We generate fatal alert
+close({shutdown, own_alert}, Socket, Transport = gen_tcp, ConnectionStates, Check) ->
     %% Standard trick to try to make sure all
     %% data sent to the tcp port is really delivered to the
     %% peer application before tcp port is closed so that the peer will
     %% get the correct TLS alert message and not only a transport close.
-    ssl_socket:setopts(Transport, Socket, [{active, false}]),
-    Transport:shutdown(Socket, write),
-    %% Will return when other side has closed or after 30 s
+    %% Will return when other side has closed or after timout millisec
     %% e.g. we do not want to hang if something goes wrong
     %% with the network but we want to maximise the odds that
     %% peer application gets all data sent on the tcp connection.
-    Transport:recv(Socket, 0, 30000);
-workaround_transport_delivery_problems(Socket, Transport) ->
+    close({close, ?DEFAULT_TIMEOUT}, Socket, Transport, ConnectionStates, Check);
+%% Other
+close(_, Socket, Transport, _,_) -> 
     Transport:close(Socket).
-
+downgrade(#alert{description = ?CLOSE_NOTIFY}, Transport, Socket, Pid) ->
+    ssl_socket:setopts(Transport, Socket, [{active, false}, {packet, 0}, {mode, binary}]),
+    Transport:controlling_process(Socket, Pid),
+    {ok, Socket};
+downgrade(_, _,_,_) ->
+    {error, no_tls_close}.
+	       
 convert_state(#state{ssl_options = Options} = State, up, "5.3.5", "5.3.6") ->
     State#state{ssl_options = convert_options_partial_chain(Options, up)};
 convert_state(#state{ssl_options = Options} = State, down, "5.3.6", "5.3.5") ->

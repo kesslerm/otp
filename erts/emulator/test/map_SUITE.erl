@@ -2,16 +2,17 @@
 %% 
 %% Copyright Ericsson AB 2013. All Rights Reserved.
 %% 
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
-%% 
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %% 
 %% %CopyrightEnd%
 %%
@@ -2390,6 +2391,9 @@ check_keys_exist([K|Ks],M) ->
     check_keys_exist(Ks,M).
 
 t_bif_merge_and_check(Config) when is_list(Config) ->
+
+    io:format("rand:export_seed() -> ~p\n",[rand:export_seed()]),
+
     %% simple disjunct ones
     %% make sure all keys are unique
     Kss = [[a,b,c,d],
@@ -2437,7 +2441,48 @@ t_bif_merge_and_check(Config) when is_list(Config) ->
     M41 = maps:merge(M4,M1),
     ok  = check_key_values(KVs1 ++ [{d,5}] ++ KVs, M41),
 
+    [begin Ma = random_map(SzA, a),
+	   Mb = random_map(SzB, b),
+	   ok = merge_maps(Ma, Mb)
+     end || SzA <- [3,10,20,100,200,1000], SzB <- [3,10,20,100,200,1000]],
+
     ok.
+
+% Generate random map with an average of Sz number of pairs: K -> {V,K}
+random_map(Sz, V) ->
+    random_map_insert(#{}, 0, V, Sz*2).
+
+random_map_insert(M0, K0, _, Sz) when K0 > Sz ->
+    M0;
+random_map_insert(M0, K0, V, Sz) ->
+    Key = K0 + rand:uniform(3),
+    random_map_insert(M0#{Key => {V,Key}}, Key, V, Sz).
+
+
+merge_maps(A, B) ->
+    AB = maps:merge(A, B),
+    %%io:format("A=~p\nB=~p\n",[A,B]),
+    maps_foreach(fun(K,VB) -> VB = maps:get(K, AB)
+		 end, B),
+    maps_foreach(fun(K,VA) ->
+			 case {maps:get(K, AB),maps:find(K, B)} of
+			     {VA, error} -> ok;
+			     {VB, {ok, VB}} -> ok
+			 end
+		 end, A),
+
+    maps_foreach(fun(K,V) ->
+			 case {maps:find(K, A),maps:find(K, B)} of
+			     {{ok, V}, error} -> ok;
+			     {error, {ok, V}} -> ok;
+			     {{ok,_}, {ok, V}} -> ok
+			 end
+		 end, AB),
+    ok.
+
+maps_foreach(Fun, Map) ->
+    maps:fold(fun(K,V,_) -> Fun(K,V) end, void, Map).
+
 
 check_key_values([],_) -> ok;
 check_key_values([{K,V}|KVs],M) ->
@@ -2615,13 +2660,76 @@ t_erts_internal_order(_Config) when is_list(_Config) ->
 t_erts_internal_hash(_Config) when is_list(_Config) ->
     K1 = 0.0,
     K2 = 0.0/-1,
+    M  = maps:from_list([{I,I}||I<-lists:seq(1,32)]),
 
-    M1 = (maps:from_list([{I,I}||I<-lists:seq(1,32)]))#{ K1 => a, K2 => b },
+    M1 = M#{ K1 => a, K2 => b },
     b  = maps:get(K2,M1),
 
-    M2 = (maps:from_list([{I,I}||I<-lists:seq(1,32)]))#{ K2 => a, K1 => b },
+    M2 = M#{ K2 => a, K1 => b },
     b  = maps:get(K1,M2),
 
+    %% test previously faulty hash list optimization
+
+    M3 = M#{[0] => a, [0,0] => b, [0,0,0] => c, [0,0,0,0] => d},
+    a  = maps:get([0],M3),
+    b  = maps:get([0,0],M3),
+    c  = maps:get([0,0,0],M3),
+    d  = maps:get([0,0,0,0],M3),
+
+    M4 = M#{{[0]} => a, {[0,0]} => b, {[0,0,0]} => c, {[0,0,0,0]} => d},
+    a  = maps:get({[0]},M4),
+    b  = maps:get({[0,0]},M4),
+    c  = maps:get({[0,0,0]},M4),
+    d  = maps:get({[0,0,0,0]},M4),
+
+    M5 = M3#{[0,0,0] => e, [0,0,0,0] => f, [0,0,0,0,0] => g,
+             [0,0,0,0,0,0] => h, [0,0,0,0,0,0,0] => i,
+             [0,0,0,0,0,0,0,0] => j, [0,0,0,0,0,0,0,0,0] => k},
+
+    a  = maps:get([0],M5),
+    b  = maps:get([0,0],M5),
+    e  = maps:get([0,0,0],M5),
+    f  = maps:get([0,0,0,0],M5),
+    g  = maps:get([0,0,0,0,0],M5),
+    h  = maps:get([0,0,0,0,0,0],M5),
+    i  = maps:get([0,0,0,0,0,0,0],M5),
+    j  = maps:get([0,0,0,0,0,0,0,0],M5),
+    k  = maps:get([0,0,0,0,0,0,0,0,0],M5),
+
+    M6 = M4#{{[0,0,0]} => e, {[0,0,0,0]} => f, {[0,0,0,0,0]} => g,
+             {[0,0,0,0,0,0]} => h, {[0,0,0,0,0,0,0]} => i,
+             {[0,0,0,0,0,0,0,0]} => j, {[0,0,0,0,0,0,0,0,0]} => k},
+
+    a  = maps:get({[0]},M6),
+    b  = maps:get({[0,0]},M6),
+    e  = maps:get({[0,0,0]},M6),
+    f  = maps:get({[0,0,0,0]},M6),
+    g  = maps:get({[0,0,0,0,0]},M6),
+    h  = maps:get({[0,0,0,0,0,0]},M6),
+    i  = maps:get({[0,0,0,0,0,0,0]},M6),
+    j  = maps:get({[0,0,0,0,0,0,0,0]},M6),
+    k  = maps:get({[0,0,0,0,0,0,0,0,0]},M6),
+
+    M7 = maps:merge(M5,M6),
+
+    a  = maps:get([0],M7),
+    b  = maps:get([0,0],M7),
+    e  = maps:get([0,0,0],M7),
+    f  = maps:get([0,0,0,0],M7),
+    g  = maps:get([0,0,0,0,0],M7),
+    h  = maps:get([0,0,0,0,0,0],M7),
+    i  = maps:get([0,0,0,0,0,0,0],M7),
+    j  = maps:get([0,0,0,0,0,0,0,0],M7),
+    k  = maps:get([0,0,0,0,0,0,0,0,0],M7),
+    a  = maps:get({[0]},M7),
+    b  = maps:get({[0,0]},M7),
+    e  = maps:get({[0,0,0]},M7),
+    f  = maps:get({[0,0,0,0]},M7),
+    g  = maps:get({[0,0,0,0,0]},M7),
+    h  = maps:get({[0,0,0,0,0,0]},M7),
+    i  = maps:get({[0,0,0,0,0,0,0]},M7),
+    j  = maps:get({[0,0,0,0,0,0,0,0]},M7),
+    k  = maps:get({[0,0,0,0,0,0,0,0,0]},M7),
     ok.
 
 t_pdict(_Config) ->

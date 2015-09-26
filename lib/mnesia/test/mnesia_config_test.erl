@@ -3,16 +3,17 @@
 %%
 %% Copyright Ericsson AB 1997-2014. All Rights Reserved.
 %%
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
 %%
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %%
 %% %CopyrightEnd%
 %%
@@ -1205,7 +1206,7 @@ dynamic_ext(Config) when is_list(Config) ->
 	    end,
     [Check(Test) || Test <- [{tab1, ram_copies},{tab2, disc_copies},{tab3, disc_only_copies}]],
     
-    T = now(),
+    T = erlang:unique_integer(),
     ?match(ok, mnesia:dirty_write({tab0, 42, T})),
     ?match(ok, mnesia:dirty_write({tab1, 42, T})),
     ?match(ok, mnesia:dirty_write({tab2, 42, T})),
@@ -1283,7 +1284,7 @@ check_storage(Me, Orig, Other) ->
     
     mnesia_test_lib:kill_mnesia([Orig]),
     mnesia_test_lib:kill_mnesia(Other),
-    T = now(),
+    T = erlang:unique_integer(),
     ?match(ok, rpc:call(Me, mnesia, dirty_write, [{tab2, 42, T}])),
     ?match(stopped, rpc:call(Me, mnesia, stop, [])),
     ?match(ok, rpc:call(Me, mnesia, start, [])),   

@@ -3,16 +3,17 @@
  *
  * Copyright Ericsson AB 2009-2014. All Rights Reserved.
  *
- * The contents of this file are subject to the Erlang Public License,
- * Version 1.1, (the "License"); you may not use this file except in
- * compliance with the License. You should have received a copy of the
- * Erlang Public License along with this software. If not, it can be
- * retrieved online at http://www.erlang.org/.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * Software distributed under the License is distributed on an "AS IS"
- * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
- * the License for the specific language governing rights and limitations
- * under the License.
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  * %CopyrightEnd%
  */
@@ -85,10 +86,6 @@
 #  define SIZEOF_LONG_LONG_SAVED__ SIZEOF_LONG_LONG
 #  undef SIZEOF_LONG_LONG
 #endif
-#ifdef HALFWORD_HEAP_EMULATOR
-#  define HALFWORD_HEAP_EMULATOR_SAVED__ HALFWORD_HEAP_EMULATOR
-#  undef HALFWORD_HEAP_EMULATOR
-#endif
 #include "erl_int_sizes_config.h"
 
 #ifdef __cplusplus
@@ -108,16 +105,11 @@ typedef long long ErlNifSInt64;
 #error No 64-bit integer type
 #endif
 
-#ifdef HALFWORD_HEAP_EMULATOR
-#  define ERL_NIF_VM_VARIANT "beam.halfword" 
-typedef unsigned int ERL_NIF_TERM;
-#else
-#  define ERL_NIF_VM_VARIANT "beam.vanilla" 
-#  if SIZEOF_LONG == SIZEOF_VOID_P
+#define ERL_NIF_VM_VARIANT "beam.vanilla" 
+#if SIZEOF_LONG == SIZEOF_VOID_P
 typedef unsigned long ERL_NIF_TERM;
-#  elif SIZEOF_LONG_LONG == SIZEOF_VOID_P
+#elif SIZEOF_LONG_LONG == SIZEOF_VOID_P
 typedef unsigned long long ERL_NIF_TERM;
-#  endif
 #endif
 
 typedef ERL_NIF_TERM ERL_NIF_UINT;

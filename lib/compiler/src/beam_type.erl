@@ -3,16 +3,17 @@
 %%
 %% Copyright Ericsson AB 1999-2013. All Rights Reserved.
 %%
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
 %%
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %%
 %% %CopyrightEnd%
 %%
@@ -91,7 +92,7 @@ simplify_basic_1([{set,[D],[TupleReg],{get_tuple_element,0}}=I|Is0], Ts0, Acc) -
 	    Ts = update(I, Ts0),
 	    simplify_basic_1(Is0, Ts, [I|Acc])
     end;
-simplify_basic_1([{set,_,_,{'catch',_}}=I|Is], _Ts, Acc) ->
+simplify_basic_1([{set,_,_,{try_catch,_,_}}=I|Is], _Ts, Acc) ->
     simplify_basic_1(Is, tdb_new(), [I|Acc]);
 simplify_basic_1([{test,is_tuple,_,[R]}=I|Is], Ts, Acc) ->
     case tdb_find(R, Ts) of
@@ -198,7 +199,7 @@ simplify_float_1([{set,[D0],[A0,B0],{alloc,_,{gc_bif,Op0,{f,0}}}}=I|Is]=Is0,
 	    Ts = tdb_update([{D0,float}], Ts0),
 	    simplify_float_1(Is, Ts, Rs, Acc)
     end;
-simplify_float_1([{set,_,_,{'catch',_}}=I|Is]=Is0, _Ts, Rs0, Acc0) ->
+simplify_float_1([{set,_,_,{try_catch,_,_}}=I|Is]=Is0, _Ts, Rs0, Acc0) ->
     Acc = flush_all(Rs0, Is0, Acc0),
     simplify_float_1(Is, tdb_new(), Rs0, [I|Acc]);
 simplify_float_1([{set,_,_,{line,_}}=I|Is], Ts, Rs, Acc) ->

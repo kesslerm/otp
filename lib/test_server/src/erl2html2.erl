@@ -3,16 +3,17 @@
 %% 
 %% Copyright Ericsson AB 1997-2015. All Rights Reserved.
 %% 
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
-%% 
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %% 
 %% %CopyrightEnd%
 %%
@@ -169,22 +170,31 @@ get_line(Anno) ->
 %%%-----------------------------------------------------------------
 %%% Find the line number of the last expression in the function
 find_clause_lines([{clause,CL,_Params,_Op,Exprs}], CLs) -> % last clause
-    try tuple_to_list(lists:last(Exprs)) of
-	[_Type,ExprLine | _] when is_integer(ExprLine) ->
-	    {lists:reverse([{clause,get_line(CL)}|CLs]), get_line(ExprLine)};
-	[tree,_ | Exprs1] ->
+    case classify_exprs(Exprs) of
+        {anno, Anno} ->
+	    {lists:reverse([{clause,get_line(CL)}|CLs]), get_line(Anno)};
+        {tree, Exprs1} ->
 	    find_clause_lines([{clause,CL,undefined,undefined,Exprs1}], CLs);
-	[macro,{_var,ExprLine,_MACRO} | _] when is_integer(ExprLine) ->
-	    {lists:reverse([{clause,get_line(CL)}|CLs]), get_line(ExprLine)};
-	_ ->
-	    {lists:reverse([{clause,get_line(CL)}|CLs]), get_line(CL)}
-    catch
-	_:_ ->
+        unknown ->
 	    {lists:reverse([{clause,get_line(CL)}|CLs]), get_line(CL)}
     end;
-
 find_clause_lines([{clause,CL,_Params,_Op,_Exprs} | Cs], CLs) ->
     find_clause_lines(Cs, [{clause,get_line(CL)}|CLs]).
+
+classify_exprs(Exprs) ->
+    case tuple_to_list(lists:last(Exprs)) of
+        [macro,{_var,Anno,_MACRO} | _] ->
+            {anno, Anno};
+        [T,ExprAnno | Exprs1] ->
+            case erl_anno:is_anno(ExprAnno) of
+                true ->
+                    {anno, ExprAnno};
+                false when T =:= tree ->
+                    {tree, Exprs1};
+                false ->
+                    unknown
+            end
+    end.
 
 %%%-----------------------------------------------------------------
 %%% Add a link target for each line and one for each function definition.

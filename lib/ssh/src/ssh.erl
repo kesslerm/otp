@@ -3,16 +3,17 @@
 %%
 %% Copyright Ericsson AB 2004-2014. All Rights Reserved.
 %%
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
 %%
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %%
 %% %CopyrightEnd%
 %%
@@ -24,12 +25,14 @@
 -include("ssh.hrl").
 -include("ssh_connect.hrl").
 -include_lib("public_key/include/public_key.hrl").
+-include_lib("kernel/include/file.hrl").
 
 -export([start/0, start/1, stop/0, connect/3, connect/4, close/1, connection_info/2,
 	 channel_info/3,
 	 daemon/1, daemon/2, daemon/3,
 	 default_algorithms/0,
-	 stop_listener/1, stop_listener/2, stop_daemon/1, stop_daemon/2,
+	 stop_listener/1, stop_listener/2,  stop_listener/3,
+	 stop_daemon/1, stop_daemon/2, stop_daemon/3,
 	 shell/1, shell/2, shell/3]).
 
 %%--------------------------------------------------------------------
@@ -158,7 +161,9 @@ daemon(HostAddr, Port, Options0) ->
 stop_listener(SysSup) ->
     ssh_system_sup:stop_listener(SysSup).
 stop_listener(Address, Port) ->
-    ssh_system_sup:stop_listener(Address, Port).
+    stop_listener(Address, Port, ?DEFAULT_PROFILE).
+stop_listener(Address, Port, Profile) ->
+    ssh_system_sup:stop_listener(Address, Port, Profile).
 
 %%--------------------------------------------------------------------
 -spec stop_daemon(pid()) -> ok.
@@ -170,8 +175,9 @@ stop_listener(Address, Port) ->
 stop_daemon(SysSup) ->
     ssh_system_sup:stop_system(SysSup).
 stop_daemon(Address, Port) ->
-    ssh_system_sup:stop_system(Address, Port).
-
+    ssh_system_sup:stop_system(Address, Port, ?DEFAULT_PROFILE).
+stop_daemon(Address, Port, Profile) ->
+    ssh_system_sup:stop_system(Address, Port, Profile).
 %%--------------------------------------------------------------------
 -spec shell(string()) ->  _.
 -spec shell(string(), proplists:proplist()) ->  _.
@@ -232,7 +238,8 @@ start_daemon(Host, Port, Options, Inet) ->
     end.
     
 do_start_daemon(Host, Port, Options, SocketOptions) ->
-    case ssh_system_sup:system_supervisor(Host, Port) of
+    Profile = proplists:get_value(profile, Options, ?DEFAULT_PROFILE),
+    case ssh_system_sup:system_supervisor(Host, Port, Profile) of
 	undefined ->
 	    %% It would proably make more sense to call the
 	    %% address option host but that is a too big change at the
@@ -339,6 +346,8 @@ handle_option([{connectfun, _} = Opt | Rest], SocketOptions, SshOptions) ->
     handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
 handle_option([{disconnectfun, _} = Opt | Rest], SocketOptions, SshOptions) ->
     handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
+handle_option([{unexpectedfun, _} = Opt | Rest], SocketOptions, SshOptions) ->
+    handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
 handle_option([{failfun, _} = Opt | Rest],  SocketOptions, SshOptions) ->
     handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
 handle_option([{ssh_msg_debug_fun, _} = Opt | Rest],  SocketOptions, SshOptions) ->
@@ -364,6 +373,10 @@ handle_option([{auth_method_kb_interactive_data, _} = Opt | Rest], SocketOptions
     handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
 handle_option([{preferred_algorithms,_} = Opt | Rest], SocketOptions, SshOptions) ->
     handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
+handle_option([{dh_gex_groups,_} = Opt | Rest], SocketOptions, SshOptions) ->
+    handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
+handle_option([{dh_gex_limits,_} = Opt | Rest], SocketOptions, SshOptions) ->
+    handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
 handle_option([{quiet_mode, _} = Opt|Rest], SocketOptions, SshOptions) ->
     handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
 handle_option([{idle_time, _} = Opt | Rest], SocketOptions, SshOptions) ->
@@ -382,6 +395,10 @@ handle_option([{minimal_remote_max_packet_size, _} = Opt|Rest], SocketOptions, S
     handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
 handle_option([{id_string, _ID} = Opt|Rest], SocketOptions, SshOptions) ->
     handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
+handle_option([{profile, _ID} = Opt|Rest], SocketOptions, SshOptions) ->
+    handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
+handle_option([{max_random_length_padding, _Bool} = Opt|Rest], SocketOptions, SshOptions) ->
+    handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
 handle_option([Opt | Rest], SocketOptions, SshOptions) ->
     handle_option(Rest, [handle_inet_option(Opt) | SocketOptions], SshOptions).
 
@@ -389,9 +406,9 @@ handle_option([Opt | Rest], SocketOptions, SshOptions) ->
 handle_ssh_option({minimal_remote_max_packet_size, Value} = Opt) when is_integer(Value), Value >=0 ->
     Opt;
 handle_ssh_option({system_dir, Value} = Opt) when is_list(Value) ->
-    Opt;
+    check_dir(Opt);
 handle_ssh_option({user_dir, Value} = Opt) when is_list(Value) ->
-    Opt;
+    check_dir(Opt);
 handle_ssh_option({user_dir_fun, Value} = Opt) when is_function(Value) ->
     Opt;
 handle_ssh_option({silently_accept_hosts, Value} = Opt) when is_boolean(Value) ->
@@ -400,6 +417,28 @@ handle_ssh_option({user_interaction, Value} = Opt) when is_boolean(Value) ->
     Opt;
 handle_ssh_option({preferred_algorithms,[_|_]} = Opt) -> 
     handle_pref_algs(Opt);
+handle_ssh_option({dh_gex_groups,L=[{I1,I2,I3}|_]}) when is_integer(I1), I1>0, 
+							 is_integer(I2), I2>0,
+							 is_integer(I3), I3>0 ->
+    {dh_gex_groups, lists:map(fun({N,G,P}) -> {N,{G,P}} end, L)};
+handle_ssh_option({dh_gex_groups,{file,File=[C|_]}}=Opt) when is_integer(C), C>0 ->
+    %% A string, (file name)
+    case file:consult(File) of
+	{ok, List} ->
+	    try handle_ssh_option({dh_gex_groups,List}) of
+		{dh_gex_groups,_} = NewOpt ->
+		    NewOpt
+	    catch
+		_:_ ->
+		    throw({error, {{eoptions, Opt}, "Bad format in file"}})
+	    end;
+	Error ->
+	    throw({error, {{eoptions, Opt},{"Error reading file",Error}}})
+    end;
+handle_ssh_option({dh_gex_limits,{Min,I,Max}} = Opt) when is_integer(Min), Min>0, 
+							  is_integer(I),   I>=Min,
+							  is_integer(Max), Max>=I ->
+    Opt;
 handle_ssh_option({connect_timeout, Value} = Opt) when is_integer(Value); Value == infinity ->
     Opt;
 handle_ssh_option({max_sessions, Value} = Opt) when is_integer(Value), Value>0 ->
@@ -442,7 +481,9 @@ handle_ssh_option({infofun, Value} = Opt)  when is_function(Value) ->
     Opt;
 handle_ssh_option({connectfun, Value} = Opt) when is_function(Value) ->
     Opt;
-handle_ssh_option({disconnectfun , Value} = Opt) when is_function(Value) ->
+handle_ssh_option({disconnectfun, Value} = Opt) when is_function(Value) ->
+    Opt;
+handle_ssh_option({unexpectedfun, Value} = Opt) when is_function(Value,2) ->
     Opt;
 handle_ssh_option({failfun, Value} = Opt) when is_function(Value) ->
     Opt;
@@ -475,6 +516,11 @@ handle_ssh_option({rekey_limit, Value} = Opt) when is_integer(Value) ->
 handle_ssh_option({id_string, random}) ->
     {id_string, {random,2,5}}; %% 2 - 5 random characters
 handle_ssh_option({id_string, ID} = Opt) when is_list(ID) ->
+    Opt;
+handle_ssh_option({max_random_length_padding, Value} = Opt) when is_integer(Value),
+								 Value =< 255 ->
+    Opt;
+handle_ssh_option({profile, Value} = Opt) when is_atom(Value) ->
     Opt;
 handle_ssh_option(Opt) ->
     throw({error, {eoptions, Opt}}).
@@ -581,4 +627,31 @@ handle_ip(Inet) -> %% Default to ipv4
 		    [inet | Inet]
 	    end
     end.
-	
+
+check_dir({_,Dir} = Opt) ->
+    case directory_exist_readable(Dir) of
+	ok ->
+	    Opt;
+	{error,Error} ->
+	    throw({error, {eoptions,{Opt,Error}}})
+    end.
+
+directory_exist_readable(Dir) ->
+    case file:read_file_info(Dir) of
+	{ok, #file_info{type = directory,
+			access = Access}} ->
+	    case Access of
+		read -> ok;
+		read_write -> ok;
+		_ -> {error, eacces}
+	    end;
+
+	{ok, #file_info{}}->
+	    {error, enotdir};
+
+	{error, Error} ->
+	    {error, Error}
+    end.
+		
+		    
+

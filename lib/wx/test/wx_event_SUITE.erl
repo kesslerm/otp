@@ -3,16 +3,17 @@
 %% 
 %% Copyright Ericsson AB 2008-2014. All Rights Reserved.
 %% 
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
-%% 
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %% 
 %% %CopyrightEnd%
 %%%-------------------------------------------------------------------
@@ -77,7 +78,6 @@ connect(Config) ->
 		 Tester ! {got_size, UserD}
 	 end,
     
-    ?m(ok, wxFrame:connect(Frame,  size)),
     ?m(ok, wxEvtHandler:connect(Panel, size,[{skip, true},{userData, panel}])),
     ?m(ok, wxEvtHandler:connect(Panel, size,[{callback,CB},{userData, panel}])),
 
@@ -90,12 +90,16 @@ connect(Config) ->
     ?m(ok, wxWindow:connect(Window, size,[{callback,CB},{userData, window}])),
     ?m(ok, wxWindow:connect(Window, size,[{skip,true},{userData, window}])),
 
+    %% For trivial side effect free callbacks, can deadlock easily otherwise
+    CB1 = fun(_,_) -> Tester ! {got_size, nospawn_cb} end,
+    ?m(ok, wxWindow:connect(Frame,  size, [{callback,{nospawn, CB1}}])),
+    ?m(ok, wxFrame:connect(Frame,  size, [{skip, true}])),
     ?m(true, wxFrame:show(Frame)),
 
     wxWindow:setSize(Panel, {200,100}),
     wxWindow:setSize(Window, {200,100}),
 
-    get_size_messages(Frame, [frame, panel_cb, window_cb, window]),
+    get_size_messages(Frame, [frame, panel_cb, window_cb, window, nospawn_cb]),
     
     wx_test_lib:wx_destroy(Frame, Config).
 
@@ -114,7 +118,9 @@ get_size_messages(Frame, Msgs) ->
 	    ?m(false, lists:member(window, Msgs)),
 	    get_size_messages(Frame, lists:delete(window_cb, Msgs));
 	{got_size,panel} -> 
-	    get_size_messages(Frame, lists:delete(panel_cb, Msgs));	
+	    get_size_messages(Frame, lists:delete(panel_cb, Msgs));
+	{got_size,nospawn_cb} ->
+	    get_size_messages(Frame, lists:delete(nospawn_cb, Msgs));
 	Other ->
 	    ?error("Got unexpected msg ~p ~p~n", [Other,Msgs])
     after 1000 ->

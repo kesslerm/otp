@@ -30,6 +30,7 @@ MODULES= \
 	erl_lint_SUITE \
 	erl_pp_SUITE \
 	erl_scan_SUITE \
+	error_logger_h_SUITE \
 	escript_SUITE \
 	ets_SUITE \
 	ets_tough_SUITE \
@@ -107,7 +108,8 @@ RELSYSDIR = $(RELEASE_PATH)/stdlib_test
 
 ERL_MAKE_FLAGS +=
 ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/test_server/include \
-		-I$(ERL_TOP)/lib/kernel/include
+		-I$(ERL_TOP)/lib/kernel/include \
+		-I$(ERL_TOP)/lib/stdlib/include
 
 EBIN = .
 

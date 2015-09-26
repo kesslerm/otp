@@ -1,10 +1,10 @@
 ####Branch Information
 |Status|Base|Branch|Release Tag|Stable B/T|
 |:-----|:---|:-----|:----------|:---------|
-| Production   | R16    | [`basho-otp-16`](http://github.com/basho/otp/tree/basho-otp-16) | [`OTP_R16B02_basho8`](http://github.com/basho/otp/tree/OTP_R16B02_basho8) | [`OTP_R16B02_basho8`](http://github.com/basho/otp/tree/OTP_R16B02_basho8) |
+| Production   | R16    | [`basho-otp-16`](http://github.com/basho/otp/tree/basho-otp-16) | [`OTP_R16B02_basho8`](http://github.com/basho/otp/tree/OTP_R16B02_basho8) | [`OTP_R16B02_basho9`](http://github.com/basho/otp/tree/OTP_R16B02_basho9) |
 | Retired      | R15    | [`basho-otp-15`](http://github.com/basho/otp/tree/basho-otp-15) | [`basho_OTP_R15B01p`](http://github.com/basho/otp/tree/basho_OTP_R15B01p) | [`OTP_R15B01_basho1`](http://github.com/basho/otp/tree/OTP_R15B01_basho1) |
 | Active       | OTP-17 | [`basho-otp-17`](http://github.com/basho/otp/tree/basho-otp-17) | _n/a_ | [`basho-otp-17`](http://github.com/basho/otp/tree/basho-otp-17) |
-| Experimental | OTP-18 | [`basho-otp-18`](http://github.com/basho/otp/tree/basho-otp-18) | _n/a_ | [`OTP-18.0-rc2`](http://github.com/basho/otp/tree/OTP-18.0-rc2) |
+| Experimental | OTP-18 | [`basho-otp-18`](http://github.com/basho/otp/tree/basho-otp-18) | _n/a_ | [`OTP-18.1`](http://github.com/basho/otp/tree/OTP-18.1) |
 
 ##Basho Erlang/OTP
 
@@ -37,6 +37,7 @@ listed for our products, but our focus is on particular versions of:
 * FreeBSD
 * Linux
 * OS X
+* SmartOS
 * Solaris
 
 #####Interoperability
@@ -51,7 +52,7 @@ configuration options to set them explicitly.
 No, we don't do Windows, and we don't even do all available versions of
 the systems listed above. While we do try to keep our changes as portable
 as the original distributions they're based on, we don't test beyond what
-our products suport.
+our products support.
 
 ###Building and Installing
 
@@ -62,9 +63,10 @@ in the [$ERL_TOP/HOWTO/INSTALL.md](HOWTO/INSTALL.md) document.
 
 Our version identifiers correlate to the Erlang/OTP release without the
 _bashoN_ suffix, but our changes to individual ERTS components and OTP
-applications may not carry distinct versions. Our releases are intended to
-be used as a single cohesive installation, we do _NOT_ support mixing
-components between our releases and the original distributions.
+applications _may not_ always carry distinct versions yet.
+Our releases are intended to be used as a single cohesive installation,
+we do _NOT_ support mixing components between our releases and the original
+distributions.
 
 ###Contributing to Erlang/OTP
 
@@ -81,13 +83,15 @@ of interest to us.
 ####Copyright and License
 
 Everything in Erlang/OTP, whether part of the original distribution or a
-contribution of ours, is subject to the terms of the
-[Erlang Public License][3].
+contribution of ours, is subject to the terms of the license applied to it
+in Ericsson's repository. Through OTP-17, that was the
+[Erlang Public License][3]. Beginning with OTP-18, the sources are now
+subject to the terms of the [Apache License, Version 2.0](LICENSE.txt).
 
 
   [1]: http://www.basho.com
   [2]: http://www.erlang.org
   [3]: http://www.erlang.org/EPLICENSE
   [4]: http://github.com/erlang/otp
-  [5]: http://github.com/erlang/otp/blob/maint/README.md
+  [5]: http://github.com/erlang/otp/blob/README.md
   [6]: http://wiki.github.com/erlang/otp/submitting-patches

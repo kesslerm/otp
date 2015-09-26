@@ -3,16 +3,17 @@
 %%
 %% Copyright Ericsson AB 1996-2014. All Rights Reserved.
 %%
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
 %%
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %%
 %% %CopyrightEnd%
 %%
@@ -411,7 +412,6 @@ notify(Config) when is_list(Config) ->
 		  ok
 	  end,
     ?line ok = gen_event:notify(my_dummy_handler, {swap_event,dummy1_h,swap}),
-    ?t:sleep(1000),
     ?line [dummy1_h] = gen_event:which_handlers(my_dummy_handler),
     ?line ok = gen_event:notify(my_dummy_handler, Event),
     ?line receive
@@ -444,7 +444,6 @@ notify(Config) when is_list(Config) ->
 	  end,
     ?line ok = gen_event:notify(my_dummy_handler,
 				{swap_event, {dummy1_h, 9}, swap}),
-    ?t:sleep(1000),
     ?line [{dummy1_h,9}] = gen_event:which_handlers(my_dummy_handler),
     ?line ok = gen_event:notify(my_dummy_handler, Event),
     ?line receive
@@ -484,7 +483,6 @@ notify(Config) when is_list(Config) ->
 
     ?line ok = gen_event:add_sup_handler(my_dummy_handler, dummy_h, [self()]),
     ?line ok = gen_event:notify(my_dummy_handler, {swap_event,dummy1_h,swap}),
-    ?t:sleep(1000),
     ?line [dummy1_h] = gen_event:which_handlers(my_dummy_handler),
 
     ?line ok = gen_event:notify(my_dummy_handler, do_crash),
@@ -495,7 +493,6 @@ notify(Config) when is_list(Config) ->
 
     ?line ok = gen_event:add_sup_handler(my_dummy_handler, dummy_h, [self()]),
     ?line ok = gen_event:notify(my_dummy_handler, {swap_event,dummy1_h,swap}),
-    ?t:sleep(1000),
     ?line [dummy1_h] = gen_event:which_handlers(my_dummy_handler),
 
     ?line ok = gen_event:notify(my_dummy_handler, delete_event),
@@ -528,7 +525,6 @@ sync_notify(Config) when is_list(Config) ->
 	  end,
     ?line ok = gen_event:sync_notify(my_dummy_handler,
 				     {swap_event, dummy1_h, swap}),
-    ?t:sleep(1000),
     ?line [dummy1_h] = gen_event:which_handlers(my_dummy_handler),
     ?line ok = gen_event:sync_notify(my_dummy_handler, Event),
     ?line receive
@@ -561,7 +557,6 @@ sync_notify(Config) when is_list(Config) ->
 	  end,
     ?line ok = gen_event:sync_notify(my_dummy_handler,
 				     {swap_event, {dummy1_h, 9}, swap}),
-    ?t:sleep(1000),
     ?line [{dummy1_h,9}] = gen_event:which_handlers(my_dummy_handler),
     ?line ok = gen_event:sync_notify(my_dummy_handler, Event),
     ?line receive
@@ -602,7 +597,6 @@ sync_notify(Config) when is_list(Config) ->
     ?line ok = gen_event:add_sup_handler(my_dummy_handler, dummy_h, [self()]),
     ?line ok = gen_event:sync_notify(my_dummy_handler,
 				     {swap_event,dummy1_h,swap}),
-    ?t:sleep(1000),
     ?line [dummy1_h] = gen_event:which_handlers(my_dummy_handler),
 
     ?line ok = gen_event:sync_notify(my_dummy_handler, do_crash),
@@ -614,7 +608,6 @@ sync_notify(Config) when is_list(Config) ->
     ?line ok = gen_event:add_sup_handler(my_dummy_handler, dummy_h, [self()]),
     ?line ok = gen_event:sync_notify(my_dummy_handler,
 				     {swap_event,dummy1_h,swap}),
-    ?t:sleep(1000),
     ?line [dummy1_h] = gen_event:which_handlers(my_dummy_handler),
 
     ?line ok = gen_event:sync_notify(my_dummy_handler, delete_event),
@@ -788,7 +781,6 @@ info(Config) when is_list(Config) ->
 		  ok
 	  end,
     ?line my_dummy_handler ! {swap_info,dummy1_h,swap},
-    ?t:sleep(1000),
     ?line [dummy1_h] = gen_event:which_handlers(my_dummy_handler),
     ?line my_dummy_handler ! Info,
     ?line receive
@@ -820,7 +812,6 @@ info(Config) when is_list(Config) ->
 		  ok
 	  end,
     ?line my_dummy_handler ! {swap_info,{dummy1_h,2},swap},
-    ?t:sleep(1000),
     ?line [{dummy1_h,2}] = gen_event:which_handlers(my_dummy_handler),
     ?line my_dummy_handler ! Info,
     ?line receive
@@ -852,7 +843,6 @@ info(Config) when is_list(Config) ->
 		  ok
 	  end,
     ?line my_dummy_handler ! {swap_info,dummy1_h,swap},
-    ?t:sleep(1000),
     ?line [dummy1_h] = gen_event:which_handlers(my_dummy_handler),
     ?line my_dummy_handler ! Info,
     ?line receive

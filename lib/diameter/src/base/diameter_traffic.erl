@@ -3,16 +3,17 @@
 %%
 %% Copyright Ericsson AB 2013-2015. All Rights Reserved.
 %%
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
 %%
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %%
 %% %CopyrightEnd%
 %%
@@ -79,6 +80,7 @@
          apps         :: [#diameter_app{}],
          sequence     :: diameter:sequence(),
          codec        :: [{string_decode, boolean()}
+                          | {strict_mbit, boolean()}
                           | {incoming_maxlen, diameter:message_length()}]}).
 %% Note that incoming_maxlen is currently handled in diameter_peer_fsm,
 %% so that any message exceeding the maximum is discarded. Retain the
@@ -97,9 +99,6 @@
 %% # make_recvdata/1
 %% ---------------------------------------------------------------------------
 
-make_recvdata([SvcName, PeerT, Apps, {_,_} = Mask | _]) ->  %% from old code
-    make_recvdata([SvcName, PeerT, Apps, [{sequence, Mask}]]);
-
 make_recvdata([SvcName, PeerT, Apps, SvcOpts | _]) ->
     {_,_} = Mask = proplists:get_value(sequence, SvcOpts),
     #recvdata{service_name = SvcName,
@@ -108,7 +107,8 @@ make_recvdata([SvcName, PeerT, Apps, SvcOpts | _]) ->
               sequence = Mask,
               codec = [T || {K,_} = T <- SvcOpts,
                             lists:member(K, [string_decode,
-                                             incoming_maxlen])]}.
+                                             incoming_maxlen,
+                                             strict_mbit])]}.
 
 %% ---------------------------------------------------------------------------
 %% peer_up/1
@@ -261,7 +261,8 @@ recv(false, #request{ref = Ref, handler = Pid} = Req, _, Pkt, Dict0, _) ->
 %% any others are discarded.
 
 %% ... or not.
-recv(false, false, TPid, _, _, _) ->
+recv(false, false, TPid, Pkt, _, _) ->
+    ?LOG(discarded, Pkt#diameter_packet.header),
     incr(TPid, {{unknown, 0}, recv, discarded}),
     ok.
 
@@ -300,13 +301,7 @@ recv_request(TPid,
                   RecvData),
            TPid,
            Dict0,
-           RecvData);
-
-recv_request(TPid, Pkt, Dict0, RecvData) -> %% from old code
-    recv_request(TPid,
-                 Pkt,
-                 Dict0,
-                 #recvdata{} = erlang:append_element(RecvData, [])).
+           RecvData).
 
 %% recv_R/5
 
@@ -1640,9 +1635,6 @@ pick_peer(SvcName,
                                     {fun(D) -> get_destination(D, Msg) end,
                                      Filter,
                                      Xtra})).
-
-pick({{_,_,_} = Transport, Mask}) ->  %% from old code; dialyzer complains
-    {Transport, Mask, []};            %% about this
 
 pick(false) ->
     {error, no_connection};

@@ -3,16 +3,17 @@
 %% 
 %% Copyright Ericsson AB 2005-2012. All Rights Reserved.
 %% 
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
-%% 
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %% 
 %% %CopyrightEnd%
 %%
@@ -138,23 +139,48 @@ flat_size_big_1(Term, Size0, Limit) when Size0 < Limit ->
 flat_size_big_1(_, _, _) -> ok.
 
 df(Config) when is_list(Config) ->
-    ?line P0 = pps(),
-    ?line PrivDir = ?config(priv_dir, Config),
-    ?line ok = file:set_cwd(PrivDir),
-    ?line erts_debug:df(?MODULE),
-    ?line Beam = filename:join(PrivDir, ?MODULE_STRING++".dis"),
-    ?line {ok,Bin} = file:read_file(Beam),
-    ?line ok = io:put_chars(binary_to_list(Bin)),
-    ?line ok = file:delete(Beam),
-    ?line true = (P0 == pps()),    
+    P0 = pps(),
+    PrivDir = ?config(priv_dir, Config),
+    ok = file:set_cwd(PrivDir),
+
+    AllLoaded = [M || {M,_} <- code:all_loaded()],
+    {Pid,Ref} = spawn_monitor(fun() -> df_smoke(AllLoaded) end),
+    receive
+	{'DOWN',Ref,process,Pid,Status} ->
+	    normal = Status
+    after 20*1000 ->
+	    %% Not finished (i.e. a slow computer). Stop now.
+	    Pid ! stop,
+	    receive
+		{'DOWN',Ref,process,Pid,Status} ->
+		    normal = Status,
+		    io:format("...")
+	    end
+    end,
+    io:nl(),
+    _ = [_ = file:delete(atom_to_list(M) ++ ".dis") ||
+	    M <- AllLoaded],
+
+    true = (P0 == pps()),
     ok.
+
+df_smoke([M|Ms]) ->
+    io:format("~p", [M]),
+    erts_debug:df(M),
+    receive
+	stop ->
+	    ok
+    after 0 ->
+	    df_smoke(Ms)
+    end;
+df_smoke([]) -> ok.
 
 pps() ->
     {erlang:ports()}.
 
 instructions(Config) when is_list(Config) ->
-    ?line Is = erts_debug:instructions(),
-    ?line _ = [list_to_atom(I) || I <- Is],
+    Is = erts_debug:instructions(),
+    _ = [list_to_atom(I) || I <- Is],
     ok.
 
 id(I) ->

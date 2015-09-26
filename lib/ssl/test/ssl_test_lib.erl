@@ -3,16 +3,17 @@
 %%
 %% Copyright Ericsson AB 2008-2015. All Rights Reserved.
 %%
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
 %%
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %%
 %% %CopyrightEnd%
 %%
@@ -240,7 +241,21 @@ close(Pid) ->
     receive
 	{'DOWN', Monitor, process, Pid, Reason} ->
 	    erlang:demonitor(Monitor),
-	    ct:log("~p:~p~nPid: ~p down due to:~p ~n", [?MODULE,?LINE, Pid, Reason])
+	    ct:log("~p:~p~nPid: ~p down due to:~p ~n", [?MODULE,?LINE, Pid, Reason]) 
+		
+    end.
+
+close(Pid, Timeout) ->
+    ct:log("~p:~p~n Close ~p ~n", [?MODULE,?LINE, Pid]),
+    Monitor = erlang:monitor(process, Pid),
+    Pid ! close,
+    receive
+	{'DOWN', Monitor, process, Pid, Reason} ->
+	    erlang:demonitor(Monitor),
+	    ct:log("~p:~p~nPid: ~p down due to:~p ~n", [?MODULE,?LINE, Pid, Reason]) 
+    after 
+	Timeout ->
+	    exit(Pid, kill)
     end.
 
 check_result(Server, ServerMsg, Client, ClientMsg) -> 
@@ -359,7 +374,7 @@ cert_options(Config) ->
     SNIServerAKeyFile = filename:join([?config(priv_dir, Config), "a.server", "key.pem"]),
     SNIServerBCertFile = filename:join([?config(priv_dir, Config), "b.server", "cert.pem"]),
     SNIServerBKeyFile = filename:join([?config(priv_dir, Config), "b.server", "key.pem"]),
-    [{client_opts, [{ssl_imp, new},{reuseaddr, true}]}, 
+    [{client_opts, []}, 
      {client_verification_opts, [{cacertfile, ClientCaCertFile}, 
 				{certfile, ClientCertFile},  
 				{keyfile, ClientKeyFile},
@@ -778,7 +793,12 @@ send_selected_port(_,_,_) ->
 
 rsa_suites(CounterPart) ->
     ECC = is_sane_ecc(CounterPart),
-    lists:filter(fun({rsa, _, _}) ->
+    FIPS = is_fips(CounterPart),
+    lists:filter(fun({rsa, des_cbc, sha}) when FIPS == true ->
+			 false;
+		    ({dhe_rsa, des_cbc, sha}) when FIPS == true ->
+			 false;
+		    ({rsa, _, _}) ->
 			 true;
 		    ({dhe_rsa, _, _}) ->
 			 true;
@@ -1070,6 +1090,9 @@ is_sane_ecc(openssl) ->
 	"OpenSSL 1.0.0" ++ _ ->  % Known bug in openssl
 	    %% manifests as SSL_CHECK_SERVERHELLO_TLSEXT:tls invalid ecpointformat list
 	    false;
+	"OpenSSL 1.0.1l" ++ _ ->  
+	    %% Breaks signature verification 
+	    false;
 	"OpenSSL 0.9.8" ++ _ -> % Does not support ECC
 	    false;
 	"OpenSSL 0.9.7" ++ _ -> % Does not support ECC
@@ -1089,6 +1112,25 @@ is_sane_ecc(crypto) ->
     end;
 is_sane_ecc(_) ->
     true.
+
+is_fips(openssl) ->
+    VersionStr = os:cmd("openssl version"),
+    case re:split(VersionStr, "fips") of
+	[_] ->
+	    false;
+	_ ->
+	    true
+    end;
+is_fips(crypto) ->
+    [{_,_, Bin}]  = crypto:info_lib(),
+    case re:split(Bin, <<"fips">>) of
+	[_] ->
+	    false;
+	_ ->
+	    true
+    end;
+is_fips(_) ->
+    false.
 
 cipher_restriction(Config0) ->
     case is_sane_ecc(openssl) of
@@ -1125,15 +1167,17 @@ check_sane_openssl_version(Version) ->
 enough_openssl_crl_support("OpenSSL 0." ++ _) -> false;
 enough_openssl_crl_support(_) -> true.
 
-wait_for_openssl_server() ->
-    receive
-	{Port, {data, Debug}} when is_port(Port) ->
-	    ct:log("~p:~p~nopenssl ~s~n",[?MODULE,?LINE, Debug]),
-	    %% openssl has started make sure
-	    %% it will be in accept. Parsing
-	    %% output is too error prone. (Even
-	    %% more so than sleep!)
-	    ct:sleep(?SLEEP)
+wait_for_openssl_server(Port) ->
+    wait_for_openssl_server(Port, 10).
+wait_for_openssl_server(_, 0) ->
+    exit(failed_to_connect_to_openssl);
+wait_for_openssl_server(Port, N) ->
+    case gen_tcp:connect("localhost", Port, []) of
+	{ok, S} ->
+	    gen_tcp:close(S);
+	_  ->
+	    ct:sleep(?SLEEP),
+	    wait_for_openssl_server(Port, N-1)
     end.
 
 version_flag(tlsv1) ->

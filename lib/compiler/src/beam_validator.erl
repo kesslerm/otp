@@ -3,16 +3,17 @@
 %%
 %% Copyright Ericsson AB 2004-2014. All Rights Reserved.
 %%
-%% The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved online at http://www.erlang.org/.
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
 %%
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 %%
 %% %CopyrightEnd%
 
@@ -29,8 +30,6 @@
 -include("beam_disasm.hrl").
 
 -import(lists, [reverse/1,foldl/3,foreach/2,dropwhile/2]).
-
--define(MAXREG, 1024).
 
 %%-define(DEBUG, 1).
 -ifdef(DEBUG).
@@ -757,10 +756,20 @@ valfun_4(_, _) ->
 
 verify_get_map(Fail, Src, List, Vst0) ->
     assert_type(map, Src, Vst0),
-    Vst1 = branch_state(Fail, Vst0),
+    Vst1 = foldl(fun(D, Vsti) ->
+                         case is_reg_defined(D,Vsti) of
+                             true -> set_type_reg(term,D,Vsti);
+                             false -> Vsti
+                         end
+                 end, Vst0, extract_map_vals(List)),
+    Vst2 = branch_state(Fail, Vst1),
     Keys = extract_map_keys(List),
     assert_unique_map_keys(Keys),
-    verify_get_map_pair(List,Vst0,Vst1).
+    verify_get_map_pair(List,Vst0,Vst2).
+
+extract_map_vals([_Key,Val|T]) ->
+    [Val|extract_map_vals(T)];
+extract_map_vals([]) -> [].
 
 extract_map_keys([Key,_Val|T]) ->
     [Key|extract_map_keys(T)];
@@ -969,9 +978,9 @@ get_fls(#vst{current=#st{fls=Fls}}) when is_atom(Fls) -> Fls.
 
 init_fregs() -> 0.
 
-set_freg({fr,Fr}, #vst{current=#st{f=Fregs0}=St}=Vst)
+set_freg({fr,Fr}=Freg, #vst{current=#st{f=Fregs0}=St}=Vst)
   when is_integer(Fr), 0 =< Fr ->
-    limit_check(Fr),
+    check_limit(Freg),
     Bit = 1 bsl Fr,
     if
 	Fregs0 band Bit =:= 0 ->
@@ -984,9 +993,10 @@ set_freg(Fr, _) -> error({bad_target,Fr}).
 assert_freg_set({fr,Fr}=Freg, #vst{current=#st{f=Fregs}})
   when is_integer(Fr), 0 =< Fr ->
     if
-	Fregs band (1 bsl Fr) =/= 0 ->
-	    limit_check(Fr);
-	true -> error({uninitialized_reg,Freg})
+	(Fregs bsr Fr) band 1 =:= 0 ->
+	    error({uninitialized_reg,Freg});
+	true ->
+	    ok
     end;
 assert_freg_set(Fr, _) -> error({bad_source,Fr}).
 
@@ -1065,16 +1075,16 @@ set_type(Type, {x,_}=Reg, Vst) -> set_type_reg(Type, Reg, Vst);
 set_type(Type, {y,_}=Reg, Vst) -> set_type_y(Type, Reg, Vst);
 set_type(_, _, #vst{}=Vst) -> Vst.
 
-set_type_reg(Type, {x,X}, #vst{current=#st{x=Xs}=St}=Vst) 
+set_type_reg(Type, {x,X}=Reg, #vst{current=#st{x=Xs}=St}=Vst)
   when is_integer(X), 0 =< X ->
-    limit_check(X),
+    check_limit(Reg),
     Vst#vst{current=St#st{x=gb_trees:enter(X, Type, Xs)}};
 set_type_reg(Type, Reg, Vst) ->
     set_type_y(Type, Reg, Vst).
 
 set_type_y(Type, {y,Y}=Reg, #vst{current=#st{y=Ys0}=St}=Vst)
   when is_integer(Y), 0 =< Y ->
-    limit_check(Y),
+    check_limit(Reg),
     Ys = case gb_trees:lookup(Y, Ys0) of
 	     none ->
 		 error({invalid_store,Reg,Type});
@@ -1091,6 +1101,17 @@ set_type_y(Type, Reg, #vst{}) -> error({invalid_store,Reg,Type}).
 set_catch_end({y,Y}, #vst{current=#st{y=Ys0}=St}=Vst) ->
     Ys = gb_trees:update(Y, initialized, Ys0),
     Vst#vst{current=St#st{y=Ys}}.
+
+
+is_reg_defined({x,_}=Reg, Vst) -> is_type_defined_x(Reg, Vst);
+is_reg_defined({y,_}=Reg, Vst) -> is_type_defined_y(Reg, Vst);
+is_reg_defined(V, #vst{}) -> error({not_a_register, V}).
+
+is_type_defined_x({x,X}, #vst{current=#st{x=Xs}}) ->
+    gb_trees:is_defined(X,Xs).
+
+is_type_defined_y({y,Y}, #vst{current=#st{y=Ys}}) ->
+    gb_trees:is_defined(Y,Ys).
 
 assert_term(Src, Vst) ->
     get_term_type(Src, Vst),
@@ -1590,9 +1611,15 @@ return_type_math(pow, 2) -> {float,[]};
 return_type_math(pi, 0) -> {float,[]};
 return_type_math(F, A) when is_atom(F), is_integer(A), A >= 0 -> term.
 
-limit_check(Num) when is_integer(Num), Num >= ?MAXREG ->
-    error(limit);
-limit_check(_) -> ok.
+check_limit({x,X}) when is_integer(X), X < 1023 ->
+    %% Note: x(1023) is reserved for use by the BEAM loader.
+    ok;
+check_limit({y,Y}) when is_integer(Y), Y < 1024 ->
+    ok;
+check_limit({fr,Fr}) when is_integer(Fr), Fr < 1024 ->
+    ok;
+check_limit(_) ->
+    error(limit).
 
 min(A, B) when is_integer(A), is_integer(B), A < B -> A;
 min(A, B) when is_integer(A), is_integer(B) -> B.
