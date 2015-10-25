@@ -91,7 +91,7 @@ init_per_testcase(TC, Config) when TC == gex_client_init_default_noexact ;
 		   []
 	   end,
     start_std_daemon(Config,
-		     [{preferred_algorithms, ssh_transport:supported_algorithms()}
+		     [{preferred_algorithms, ssh:default_algorithms()}
 		      | Opts]);
 init_per_testcase(_TestCase, Config) ->
     check_std_daemon_works(Config, ?LINE).
@@ -327,6 +327,8 @@ no_common_alg_client_disconnects(Config) ->
 	X -> 
 	    ct:log("¤¤¤¤¤"),
 	    ct:fail(X)
+    after 
+	30000 -> ct:fail("timeout ~p:~p",[?MODULE,?LINE])
     end.
 
 %%%--------------------------------------------------------------------

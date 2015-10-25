@@ -117,9 +117,9 @@ channel_info(ConnectionRef, ChannelId, Options) ->
     ssh_connection_handler:channel_info(ConnectionRef, ChannelId, Options).
 
 %%--------------------------------------------------------------------
--spec daemon(integer()) -> {ok, pid()}.
--spec daemon(integer(), proplists:proplist()) -> {ok, pid()}.
--spec daemon(any | inet:ip_address(), integer(), proplists:proplist()) -> {ok, pid()}.
+-spec daemon(integer()) -> {ok, pid()} | {error, term()}.
+-spec daemon(integer(), proplists:proplist()) -> {ok, pid()} | {error, term()}.
+-spec daemon(any | inet:ip_address(), integer(), proplists:proplist()) -> {ok, pid()} | {error, term()}.
 
 %% Description: Starts a server listening for SSH connections 
 %% on the given port.
@@ -385,12 +385,15 @@ handle_option([{rekey_limit, _} = Opt|Rest], SocketOptions, SshOptions) ->
     handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
 handle_option([{max_sessions, _} = Opt|Rest], SocketOptions, SshOptions) ->
     handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
+handle_option([{max_channels, _} = Opt|Rest], SocketOptions, SshOptions) ->
+    handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
 handle_option([{negotiation_timeout, _} = Opt|Rest], SocketOptions, SshOptions) ->
     handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
 handle_option([{parallel_login, _} = Opt|Rest], SocketOptions, SshOptions) ->
     handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
-handle_option([parallel_login|Rest], SocketOptions, SshOptions) ->
-    handle_option(Rest, SocketOptions, [handle_ssh_option({parallel_login,true}) | SshOptions]);
+%% (Is handled by proplists:unfold above:)
+%% handle_option([parallel_login|Rest], SocketOptions, SshOptions) ->
+%%     handle_option(Rest, SocketOptions, [handle_ssh_option({parallel_login,true}) | SshOptions]);
 handle_option([{minimal_remote_max_packet_size, _} = Opt|Rest], SocketOptions, SshOptions) ->
     handle_option(Rest, SocketOptions, [handle_ssh_option(Opt) | SshOptions]);
 handle_option([{id_string, _ID} = Opt|Rest], SocketOptions, SshOptions) ->
@@ -442,6 +445,8 @@ handle_ssh_option({dh_gex_limits,{Min,I,Max}} = Opt) when is_integer(Min), Min>0
 handle_ssh_option({connect_timeout, Value} = Opt) when is_integer(Value); Value == infinity ->
     Opt;
 handle_ssh_option({max_sessions, Value} = Opt) when is_integer(Value), Value>0 ->
+    Opt;
+handle_ssh_option({max_channels, Value} = Opt) when is_integer(Value), Value>0 ->
     Opt;
 handle_ssh_option({negotiation_timeout, Value} = Opt) when is_integer(Value); Value == infinity ->
     Opt;
