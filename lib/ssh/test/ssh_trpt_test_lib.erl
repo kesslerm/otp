@@ -73,7 +73,10 @@ exec(Op, S0=#s{}) ->
 	  op(Op, S1))
     of
 	S = #s{} ->
-	    print_traces(S),
+	    case proplists:get_value(silent,S#s.opts) of
+		true -> ok;
+		_ -> print_traces(S)
+	    end,
 	    {ok,S}
     catch
 	{fail,Reason,Se} ->
@@ -743,7 +746,7 @@ print_traces(S) ->
 		      [case Len-length(Acc)-1 of
 			   0 ->
 			       io_lib:format(Fmt,Args);
-			   N ->
+			   _N ->
 			       io_lib:format(lists:concat(['~p --------~n',Fmt]),
 					     [Len-length(Acc)-1|Args])
 		       end | Acc]

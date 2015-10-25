@@ -37,12 +37,15 @@
 -define(FALSE, 0).
 -define(TRUE,  1).
 %% basic binary constructors
--define(BOOLEAN(X),  X:8/unsigned-big-integer).
--define(BYTE(X),     X:8/unsigned-big-integer).
--define(UINT16(X),   X:16/unsigned-big-integer).
--define(UINT32(X),   X:32/unsigned-big-integer).
--define(UINT64(X),   X:64/unsigned-big-integer).
+-define(BOOLEAN(X),  (X):8/unsigned-big-integer).
+-define(BYTE(X),     (X):8/unsigned-big-integer).
+-define(UINT16(X),   (X):16/unsigned-big-integer).
+-define(UINT32(X),   (X):32/unsigned-big-integer).
+-define(UINT64(X),   (X):64/unsigned-big-integer).
 -define(STRING(X),   ?UINT32((size(X))), (X)/binary).
+
+-define(DEC_BIN(X,Len),   ?UINT32(Len), X:Len/binary ).
+-define(DEC_MPINT(I,Len), ?UINT32(Len), I:Len/big-signed-integer-unit:8 ).
 
 %% building macros
 -define(boolean(X),
@@ -133,7 +136,6 @@
 	  userauth_supported_methods,       %  string() eg "keyboard-interactive,password"
 	  userauth_methods,                 %  list( string() )  eg ["keyboard-interactive", "password"]
 	  kb_tries_left = 0,                %  integer(), num tries left for "keyboard-interactive"
-	  kb_data,
 	  userauth_preference,
 	  available_host_keys,
 	  authenticated = false

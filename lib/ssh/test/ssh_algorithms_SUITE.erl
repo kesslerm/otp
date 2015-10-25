@@ -23,6 +23,7 @@
 -module(ssh_algorithms_SUITE).
 
 -include_lib("common_test/include/ct.hrl").
+-include_lib("ssh/src/ssh_transport.hrl").
 
 %% Note: This directive should only be used in test suites.
 -compile(export_all).
@@ -57,7 +58,7 @@ groups() ->
 	],
 
     AlgoTcSet =
-	[{Alg, [], specific_test_cases(Tag,Alg,SshcAlgos,SshdAlgos)}
+	[{Alg, [parallel], specific_test_cases(Tag,Alg,SshcAlgos,SshdAlgos)}
 	 || {Tag,Algs} <- ErlAlgos ++ DoubleAlgos,
 	    Alg <- Algs],
 
@@ -72,11 +73,19 @@ init_per_suite(Config) ->
 	   "OS ssh:~n=======~n~p~n~n~n"
 	   "Erl ssh:~n========~n~p~n~n~n"
 	   "Installed ssh client:~n=====================~n~p~n~n~n"
-	   "Installed ssh server:~n=====================~n~p~n~n~n",
-	   [os:cmd("ssh -V"),
+	   "Installed ssh server:~n=====================~n~p~n~n~n"
+	   "Misc values:~n============~n"
+	   " -- Default dh group exchange parameters ({min,def,max}): ~p~n"
+	   " -- dh_default_groups: ~p~n"
+	   " -- Max num algorithms: ~p~n"
+	  ,[os:cmd("ssh -V"),
 	    ssh:default_algorithms(),
 	    ssh_test_lib:default_algorithms(sshc),
-	    ssh_test_lib:default_algorithms(sshd)]),
+	    ssh_test_lib:default_algorithms(sshd),
+	    {?DEFAULT_DH_GROUP_MIN,?DEFAULT_DH_GROUP_NBITS,?DEFAULT_DH_GROUP_MAX},
+	    [KeyLen || {KeyLen,_} <- ?dh_default_groups],
+	    ?MAX_NUM_ALGORITHMS
+	    ]),
     ct:log("all() ->~n    ~p.~n~ngroups()->~n    ~p.~n",[all(),groups()]),
     catch crypto:stop(),
     case catch crypto:start() of
@@ -101,7 +110,8 @@ init_per_group(Group, Config) ->
 	    Config;
 	false ->
 	    %% An algorithm group
-	    [[{name,Tag}]|_] = ?config(tc_group_path, Config),
+	    Tag = proplists:get_value(name,
+				      hd(?config(tc_group_path, Config))),
 	    Alg = Group,
 	    PA =
 		case split(Alg) of
@@ -160,6 +170,21 @@ simple_sftp(Config) ->
 simple_exec(Config) ->
     {Host,Port} = ?config(srvr_addr, Config),
     ssh_test_lib:std_simple_exec(Host, Port, Config).
+
+%%--------------------------------------------------------------------
+%% Testing all default groups
+simple_exec_group14(Config) -> simple_exec_group(2048, Config).
+simple_exec_group15(Config) -> simple_exec_group(3072, Config).
+simple_exec_group16(Config) -> simple_exec_group(4096, Config).
+simple_exec_group17(Config) -> simple_exec_group(6144, Config).
+simple_exec_group18(Config) -> simple_exec_group(8192, Config).
+
+simple_exec_group(I, Config) ->
+    Min = I-100,
+    Max = I+100,
+    {Host,Port} = ?config(srvr_addr, Config),
+    ssh_test_lib:std_simple_exec(Host, Port, Config,
+				 [{dh_gex_limits,{Min,I,Max}}]).
 
 %%--------------------------------------------------------------------
 %% Use the ssh client of the OS to connect
@@ -252,6 +277,17 @@ specific_test_cases(Tag, Alg, SshcAlgos, SshdAlgos) ->
 	case supports(Tag, Alg, SshdAlgos) of
 	    true ->
 		[sshd_simple_exec];
+	    _ ->
+		[]
+	end ++
+	case {Tag,Alg} of
+	    {kex,_} when Alg == 'diffie-hellman-group-exchange-sha1' ;
+			 Alg == 'diffie-hellman-group-exchange-sha256' ->
+		[simple_exec_group14,
+		 simple_exec_group15,
+		 simple_exec_group16,
+		 simple_exec_group17,
+		 simple_exec_group18];
 	    _ ->
 		[]
 	end.

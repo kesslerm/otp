@@ -77,6 +77,9 @@ all() ->
      appup_test,
      {group, dsa_key},
      {group, rsa_key},
+     {group, ecdsa_sha2_nistp256_key},
+     {group, ecdsa_sha2_nistp384_key},
+     {group, ecdsa_sha2_nistp521_key},
      {group, dsa_pass_key},
      {group, rsa_pass_key},
      {group, internal_error},
@@ -89,6 +92,9 @@ all() ->
 groups() ->
     [{dsa_key, [], basic_tests()},
      {rsa_key, [], basic_tests()},
+     {ecdsa_sha2_nistp256_key, [], basic_tests()},
+     {ecdsa_sha2_nistp384_key, [], basic_tests()},
+     {ecdsa_sha2_nistp521_key, [], basic_tests()},
      {dsa_pass_key, [], [pass_phrase]},
      {rsa_pass_key, [], [pass_phrase]},
      {internal_error, [], [internal_error]}
@@ -117,8 +123,6 @@ end_per_suite(_Config) ->
     ssh:stop(),
     crypto:stop().
 %%--------------------------------------------------------------------
-init_per_group(hardening_tests, Config) ->
-    init_per_group(dsa_key, Config);
 init_per_group(dsa_key, Config) ->
     DataDir = ?config(data_dir, Config),
     PrivDir = ?config(priv_dir, Config),
@@ -129,6 +133,39 @@ init_per_group(rsa_key, Config) ->
     PrivDir = ?config(priv_dir, Config),
     ssh_test_lib:setup_rsa(DataDir, PrivDir),
     Config;
+init_per_group(ecdsa_sha2_nistp256_key, Config) ->
+    case lists:member('ecdsa-sha2-nistp256',
+		      ssh_transport:default_algorithms(public_key)) of
+	true ->
+	    DataDir = ?config(data_dir, Config),
+	    PrivDir = ?config(priv_dir, Config),
+	    ssh_test_lib:setup_ecdsa("256", DataDir, PrivDir),
+	    Config;
+	false ->
+	    {skip, unsupported_pub_key}
+    end;
+init_per_group(ecdsa_sha2_nistp384_key, Config) ->
+    case lists:member('ecdsa-sha2-nistp384',
+		      ssh_transport:default_algorithms(public_key)) of
+	true ->
+	    DataDir = ?config(data_dir, Config),
+	    PrivDir = ?config(priv_dir, Config),
+	    ssh_test_lib:setup_ecdsa("384", DataDir, PrivDir),
+	    Config;
+	false ->
+	    {skip, unsupported_pub_key}
+    end;
+init_per_group(ecdsa_sha2_nistp521_key, Config) ->
+    case lists:member('ecdsa-sha2-nistp521',
+		      ssh_transport:default_algorithms(public_key)) of
+	true ->
+	    DataDir = ?config(data_dir, Config),
+	    PrivDir = ?config(priv_dir, Config),
+	    ssh_test_lib:setup_ecdsa("521", DataDir, PrivDir),
+	    Config;
+	false ->
+	    {skip, unsupported_pub_key}
+    end;
 init_per_group(rsa_pass_key, Config) ->
     DataDir = ?config(data_dir, Config),
     PrivDir = ?config(priv_dir, Config),
@@ -190,8 +227,6 @@ init_per_group(dir_options, Config) ->
 init_per_group(_, Config) ->
     Config.
 
-end_per_group(hardening_tests, Config) ->
-    end_per_group(dsa_key, Config);
 end_per_group(dsa_key, Config) ->
     PrivDir = ?config(priv_dir, Config),
     ssh_test_lib:clean_dsa(PrivDir),
@@ -362,30 +397,36 @@ exec(Config) when is_list(Config) ->
 %%--------------------------------------------------------------------
 %%% Test that compression option works
 exec_compressed(Config) when is_list(Config) ->
-    process_flag(trap_exit, true),
-    SystemDir = filename:join(?config(priv_dir, Config), system),
-    UserDir = ?config(priv_dir, Config), 
+    case ssh_test_lib:ssh_supports(zlib, compression) of
+	false ->
+	    {skip, "zlib compression is not supported"};
 
-    {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SystemDir},{user_dir, UserDir},
-					     {preferred_algorithms,[{compression, [zlib]}]},
-					     {failfun, fun ssh_test_lib:failfun/2}]),
+	true ->
+	    process_flag(trap_exit, true),
+	    SystemDir = filename:join(?config(priv_dir, Config), system),
+	    UserDir = ?config(priv_dir, Config), 
+
+	    {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SystemDir},{user_dir, UserDir},
+						     {preferred_algorithms,[{compression, [zlib]}]},
+						     {failfun, fun ssh_test_lib:failfun/2}]),
     
-    ConnectionRef =
-	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
-					  {user_dir, UserDir},
-					  {user_interaction, false}]),
-    {ok, ChannelId} = ssh_connection:session_channel(ConnectionRef, infinity),
-    success = ssh_connection:exec(ConnectionRef, ChannelId,
-				  "1+1.", infinity),
-    Data = {ssh_cm, ConnectionRef, {data, ChannelId, 0, <<"2\n">>}},
-    case ssh_test_lib:receive_exec_result(Data) of
-	expected ->
-	    ok;
-	Other ->
-	    ct:fail(Other)
-    end,
-    ssh_test_lib:receive_exec_end(ConnectionRef, ChannelId),
-    ssh:stop_daemon(Pid).
+	    ConnectionRef =
+		ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
+						  {user_dir, UserDir},
+						  {user_interaction, false}]),
+	    {ok, ChannelId} = ssh_connection:session_channel(ConnectionRef, infinity),
+	    success = ssh_connection:exec(ConnectionRef, ChannelId,
+					  "1+1.", infinity),
+	    Data = {ssh_cm, ConnectionRef, {data, ChannelId, 0, <<"2\n">>}},
+	    case ssh_test_lib:receive_exec_result(Data) of
+		expected ->
+		    ok;
+		Other ->
+		    ct:fail(Other)
+	    end,
+	    ssh_test_lib:receive_exec_end(ConnectionRef, ChannelId),
+	    ssh:stop_daemon(Pid)
+    end.
 
 %%--------------------------------------------------------------------
 %%% Idle timeout test
@@ -428,6 +469,8 @@ shell(Config) when is_list(Config) ->
 	ErlShellStart ->
 	    ct:log("Erlang shell start: ~p~n", [ErlShellStart]),
 	    do_shell(IO, Shell)
+    after 
+	30000 -> ct:fail("timeout ~p:~p",[?MODULE,?LINE])
     end.
     
 %%--------------------------------------------------------------------
@@ -456,11 +499,15 @@ cli(Config) when is_list(Config) ->
 	{ssh_cm, ConnectionRef,
 	 {data,0,0, <<"\r\nYou are accessing a dummy, type \"q\" to exit\r\n\n">>}} ->
 	    ok = ssh_connection:send(ConnectionRef, ChannelId, <<"q">>)
+    after 
+	30000 -> ct:fail("timeout ~p:~p",[?MODULE,?LINE])
     end,
     
     receive 
      	{ssh_cm, ConnectionRef,{closed, ChannelId}} ->
      	    ok
+    after 
+	30000 -> ct:fail("timeout ~p:~p",[?MODULE,?LINE])
     end.
 
 %%--------------------------------------------------------------------
@@ -599,7 +646,7 @@ peername_sockname(Config) when is_list(Config) ->
 	    host_equal(HostSockSrv, Host),
 	    PortSockSrv = Port
     after 10000 ->
-	    throw(timeout)
+	    ct:fail("timeout ~p:~p",[?MODULE,?LINE])
     end.
 
 host_equal(H1, H2) ->
@@ -633,7 +680,7 @@ close(Config) when is_list(Config) ->
 	{ssh_cm, Client,{closed, ChannelId}} ->  
 	    ok
     after 5000 ->
-	    ct:fail(timeout)
+	    ct:fail("timeout ~p:~p",[?MODULE,?LINE])
     end.
 
 %%--------------------------------------------------------------------
@@ -708,22 +755,28 @@ shell_unicode_string(Config) ->
 %%--------------------------------------------------------------------
 %%% Test basic connection with openssh_zlib
 openssh_zlib_basic_test(Config) ->
-    SystemDir = filename:join(?config(priv_dir, Config), system),
-    UserDir = ?config(priv_dir, Config),
+    case ssh_test_lib:ssh_supports(['zlib@openssh.com',none], compression) of
+	{false,L} ->
+	    {skip, io_lib:format("~p compression is not supported",[L])};
 
-    {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SystemDir},
-					     {user_dir, UserDir},
-					     {preferred_algorithms,[{compression, ['zlib@openssh.com']}]},
-					     {failfun, fun ssh_test_lib:failfun/2}]),
-    ConnectionRef =
-	ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
-					  {user_dir, UserDir},
-					  {user_interaction, false},
-					  {preferred_algorithms,[{compression, ['zlib@openssh.com',
-										none]}]}
-					 ]),
-    ok = ssh:close(ConnectionRef),
-    ssh:stop_daemon(Pid).
+	true ->
+	    SystemDir = filename:join(?config(priv_dir, Config), system),
+	    UserDir = ?config(priv_dir, Config),
+
+	    {Pid, Host, Port} = ssh_test_lib:daemon([{system_dir, SystemDir},
+						     {user_dir, UserDir},
+						     {preferred_algorithms,[{compression, ['zlib@openssh.com']}]},
+						     {failfun, fun ssh_test_lib:failfun/2}]),
+	    ConnectionRef =
+		ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
+						  {user_dir, UserDir},
+						  {user_interaction, false},
+						  {preferred_algorithms,[{compression, ['zlib@openssh.com',
+											none]}]}
+						 ]),
+	    ok = ssh:close(ConnectionRef),
+	    ssh:stop_daemon(Pid)
+    end.
 
 %%--------------------------------------------------------------------
 ssh_info_print(Config) ->
@@ -825,22 +878,32 @@ do_shell(IO, Shell) ->
      receive
 	Echo0 ->
 	     ct:log("Echo: ~p ~n", [Echo0])
+    after 
+	10000 -> ct:fail("timeout ~p:~p",[?MODULE,?LINE])
     end,
     receive
 	?NEWLINE ->
 	    ok
+    after 
+	10000 -> ct:fail("timeout ~p:~p",[?MODULE,?LINE])
     end,
     receive
 	Result0 = <<"2">> ->
 	    ct:log("Result: ~p~n", [Result0])
+    after 
+	10000 -> ct:fail("timeout ~p:~p",[?MODULE,?LINE])
     end,
     receive
 	?NEWLINE ->
 	    ok
+    after 
+	10000 -> ct:fail("timeout ~p:~p",[?MODULE,?LINE])
     end,
     receive
 	ErlPrompt1 ->
 	    ct:log("Erlang prompt: ~p~n", [ErlPrompt1])
+    after 
+	10000 -> ct:fail("timeout ~p:~p",[?MODULE,?LINE])
     end,
     exit(Shell, kill).
     %%Does not seem to work in the testserver!

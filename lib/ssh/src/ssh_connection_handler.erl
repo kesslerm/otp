@@ -49,7 +49,10 @@
 -export([hello/2, kexinit/2, key_exchange/2, 
 	 key_exchange_dh_gex_init/2, key_exchange_dh_gex_reply/2,
 	 new_keys/2,
-	 userauth/2, connected/2,
+	 service_request/2, connected/2,
+	 userauth/2,
+	 userauth_keyboard_interactive/2,
+	 userauth_keyboard_interactive_info_response/2,
 	 error/2]).
 
 -export([init/1, handle_event/3,
@@ -82,7 +85,12 @@
 	  recbuf
 	 }). 
 
--type state_name()           :: hello | kexinit | key_exchange | new_keys | userauth | connection.
+-type state_name()           :: hello | kexinit | key_exchange | key_exchange_dh_gex_init |
+				key_exchange_dh_gex_reply | new_keys | service_request | 
+				userauth | userauth_keyboard_interactive |
+				userauth_keyboard_interactive_info_response |
+				connection.
+
 -type gen_fsm_state_return() :: {next_state, state_name(), term()} |
 				{next_state, state_name(), term(), timeout()} |
 				{stop, term(), term()}.
@@ -474,28 +482,30 @@ new_keys(#ssh_msg_newkeys{} = Msg, #state{ssh_params = Ssh0} = State0) ->
     after_new_keys(next_packet(State0#state{ssh_params = Ssh})).
 
 %%--------------------------------------------------------------------
--spec userauth(#ssh_msg_service_request{} | #ssh_msg_service_accept{} |
-	       #ssh_msg_userauth_request{} | #ssh_msg_userauth_info_request{} |
-	       #ssh_msg_userauth_info_response{} | #ssh_msg_userauth_success{} |
-	       #ssh_msg_userauth_failure{} | #ssh_msg_userauth_banner{},
-	       #state{}) -> gen_fsm_state_return().
+-spec service_request(#ssh_msg_service_request{} | #ssh_msg_service_accept{},
+		      #state{}) -> gen_fsm_state_return().
 %%--------------------------------------------------------------------
-
-userauth(#ssh_msg_service_request{name = "ssh-userauth"} = Msg, 
+service_request(#ssh_msg_service_request{name = "ssh-userauth"} = Msg, 
 	 #state{ssh_params = #ssh{role = server, 
 				  session_id = SessionId} = Ssh0} = State) ->
     {ok, {Reply, Ssh}} = ssh_auth:handle_userauth_request(Msg, SessionId, Ssh0),
     send_msg(Reply, State),
     {next_state, userauth, next_packet(State#state{ssh_params = Ssh})};
 
-userauth(#ssh_msg_service_accept{name = "ssh-userauth"},  
-	 #state{ssh_params = #ssh{role = client,
-				  service = "ssh-userauth"} = Ssh0} = 
-	 State) ->
+service_request(#ssh_msg_service_accept{name = "ssh-userauth"},  
+		#state{ssh_params = #ssh{role = client,
+					 service = "ssh-userauth"} = Ssh0} = 
+		    State) ->
     {Msg, Ssh} = ssh_auth:init_userauth_request_msg(Ssh0),
     send_msg(Msg, State),
-    {next_state, userauth, next_packet(State#state{auth_user = Ssh#ssh.user, ssh_params = Ssh})};
+    {next_state, userauth, next_packet(State#state{auth_user = Ssh#ssh.user, ssh_params = Ssh})}.
 
+%%--------------------------------------------------------------------
+-spec userauth(#ssh_msg_userauth_request{} | #ssh_msg_userauth_info_request{} |
+	       #ssh_msg_userauth_info_response{} | #ssh_msg_userauth_success{} |
+	       #ssh_msg_userauth_failure{} | #ssh_msg_userauth_banner{},
+	       #state{}) -> gen_fsm_state_return().
+%%--------------------------------------------------------------------
 userauth(#ssh_msg_userauth_request{service = "ssh-connection",
                                   method = "none"} = Msg, 
         #state{ssh_params = #ssh{session_id = SessionId, role = server, 
@@ -520,7 +530,11 @@ userauth(#ssh_msg_userauth_request{service = "ssh-connection",
 		    Pid ! ssh_connected,
 		    connected_fun(User, Address, Method, Opts),
 		    {next_state, connected, 
-		     next_packet(State#state{auth_user = User, ssh_params = Ssh})};
+		     next_packet(State#state{auth_user = User, ssh_params = Ssh#ssh{authenticated = true}})};
+		{not_authorized, {User, Reason}, {Reply, Ssh}} when Method == "keyboard-interactive" ->
+		    retry_fun(User, Address, Reason, Opts),
+		    send_msg(Reply, State),
+		    {next_state, userauth_keyboard_interactive, next_packet(State#state{ssh_params = Ssh})};
 		{not_authorized, {User, Reason}, {Reply, Ssh}} ->
 		    retry_fun(User, Address, Reason, Opts),
 		    send_msg(Reply, State),
@@ -530,30 +544,6 @@ userauth(#ssh_msg_userauth_request{service = "ssh-connection",
 	    userauth(Msg#ssh_msg_userauth_request{method="none"}, State)
     end;
 
-userauth(#ssh_msg_userauth_info_request{} = Msg, 
-	 #state{ssh_params = #ssh{role = client, 
-				  io_cb = IoCb} = Ssh0} = State) ->
-    {ok, {Reply, Ssh}} = ssh_auth:handle_userauth_info_request(Msg, IoCb, Ssh0),
-    send_msg(Reply, State),
-    {next_state, userauth, next_packet(State#state{ssh_params = Ssh})};
-
-userauth(#ssh_msg_userauth_info_response{} = Msg, 
-	 #state{ssh_params = #ssh{role = server,
-				  peer = {_, Address}} = Ssh0,
-		opts = Opts, starter = Pid} = State) ->
-    case ssh_auth:handle_userauth_info_response(Msg, Ssh0) of
-	{authorized, User, {Reply, Ssh}} ->
-	    send_msg(Reply, State),
-	    Pid ! ssh_connected,
-	    connected_fun(User, Address, "keyboard-interactive", Opts),
-	    {next_state, connected, 
-	     next_packet(State#state{auth_user = User, ssh_params = Ssh})};
-	{not_authorized, {User, Reason}, {Reply, Ssh}} ->
-	    retry_fun(User, Address, Reason, Opts),
-	    send_msg(Reply, State),
-	    {next_state, userauth, next_packet(State#state{ssh_params = Ssh})} 
-    end;
-			
 userauth(#ssh_msg_userauth_success{}, #state{ssh_params = #ssh{role = client} = Ssh,
 					     starter = Pid} = State) ->
     Pid ! ssh_connected,
@@ -580,19 +570,25 @@ userauth(#ssh_msg_userauth_failure{authentications = Methodes},
 	{disconnect, DisconnectMsg, {Msg, Ssh}} ->
 	    send_msg(Msg, State),
 	    handle_disconnect(DisconnectMsg, State#state{ssh_params = Ssh});
-	{Msg, Ssh} ->
+	{"keyboard-interactive", {Msg, Ssh}} ->
+	    send_msg(Msg, State),
+	    {next_state, userauth_keyboard_interactive, next_packet(State#state{ssh_params = Ssh})};
+	{_Method, {Msg, Ssh}} ->
 	    send_msg(Msg, State),
 	    {next_state, userauth, next_packet(State#state{ssh_params = Ssh})}
     end;
 
 %% The prefered authentication method failed try next method 
-userauth(#ssh_msg_userauth_failure{},  
+userauth(#ssh_msg_userauth_failure{},
 	 #state{ssh_params = #ssh{role = client} = Ssh0} = State) ->
     case ssh_auth:userauth_request_msg(Ssh0) of
 	{disconnect,  DisconnectMsg,{Msg, Ssh}} ->
 	    send_msg(Msg, State),
 	    handle_disconnect(DisconnectMsg, State#state{ssh_params = Ssh}); 
-	{Msg, Ssh} ->	  
+	{"keyboard-interactive", {Msg, Ssh}} ->
+	    send_msg(Msg, State),
+	    {next_state, userauth_keyboard_interactive, next_packet(State#state{ssh_params = Ssh})};
+	{_Method, {Msg, Ssh}} ->
 	    send_msg(Msg, State),
 	    {next_state, userauth, next_packet(State#state{ssh_params = Ssh})}
     end;
@@ -606,6 +602,40 @@ userauth(#ssh_msg_userauth_banner{message = Msg},
 		#ssh{userauth_quiet_mode = false, role = client}} = State) ->
     io:format("~s", [Msg]),
     {next_state, userauth, next_packet(State)}.
+
+
+
+userauth_keyboard_interactive(#ssh_msg_userauth_info_request{} = Msg, 
+			      #state{ssh_params = #ssh{role = client, 
+						       io_cb = IoCb} = Ssh0} = State) ->
+    {ok, {Reply, Ssh}} = ssh_auth:handle_userauth_info_request(Msg, IoCb, Ssh0),
+    send_msg(Reply, State),
+    {next_state, userauth_keyboard_interactive_info_response, next_packet(State#state{ssh_params = Ssh})};
+
+userauth_keyboard_interactive(#ssh_msg_userauth_info_response{} = Msg, 
+			      #state{ssh_params = #ssh{role = server,
+						       peer = {_, Address}} = Ssh0,
+				     opts = Opts, starter = Pid} = State) ->
+    case ssh_auth:handle_userauth_info_response(Msg, Ssh0) of
+	{authorized, User, {Reply, Ssh}} ->
+	    send_msg(Reply, State),
+	    Pid ! ssh_connected,
+	    connected_fun(User, Address, "keyboard-interactive", Opts),
+	    {next_state, connected, 
+	     next_packet(State#state{auth_user = User, ssh_params = Ssh#ssh{authenticated = true}})};
+	{not_authorized, {User, Reason}, {Reply, Ssh}} ->
+	    retry_fun(User, Address, Reason, Opts),
+	    send_msg(Reply, State),
+	    {next_state, userauth, next_packet(State#state{ssh_params = Ssh})} 
+    end.
+			
+
+
+userauth_keyboard_interactive_info_response(Msg=#ssh_msg_userauth_failure{}, State) ->
+    userauth(Msg, State);
+
+userauth_keyboard_interactive_info_response(Msg=#ssh_msg_userauth_success{}, State) ->
+    userauth(Msg, State).
 
 %%--------------------------------------------------------------------
 -spec connected({#ssh_msg_kexinit{}, binary()}, %%| %% #ssh_msg_kexdh_init{},
@@ -1236,9 +1266,9 @@ supported_host_keys(client, _, Options) ->
 				 proplists:get_value(preferred_algorithms,Options,[])
 				) of
 	    undefined -> 
-		ssh_auth:default_public_key_algorithms();
+		ssh_transport:default_algorithms(public_key);
 	    L ->
-		L -- (L--ssh_auth:default_public_key_algorithms())
+		L -- (L--ssh_transport:default_algorithms(public_key))
 	end
     of
 	[] ->
@@ -1250,20 +1280,16 @@ supported_host_keys(client, _, Options) ->
 	    {stop, {shutdown, Reason}}
     end;
 supported_host_keys(server, KeyCb, Options) ->
-    Algs=
     [atom_to_list(A) || A <- proplists:get_value(public_key, 
 						 proplists:get_value(preferred_algorithms,Options,[]),
-						 ssh_auth:default_public_key_algorithms()
+						 ssh_transport:default_algorithms(public_key)
 						),
 			available_host_key(KeyCb, A, Options)
-    ],
-    Algs.
-
+    ].
 
 %% Alg :: atom()
 available_host_key(KeyCb, Alg, Opts) ->
     element(1, catch KeyCb:host_key(Alg, Opts)) == ok.
-
 
 send_msg(Msg, #state{socket = Socket, transport_cb = Transport}) ->
     Transport:send(Socket, Msg).
@@ -1563,10 +1589,10 @@ after_new_keys(#state{renegotiate = false,
 		      ssh_params = #ssh{role = client} = Ssh0} = State) ->
     {Msg, Ssh} = ssh_auth:service_request_msg(Ssh0),
     send_msg(Msg, State),
-    {next_state, userauth, State#state{ssh_params = Ssh}};
+    {next_state, service_request, State#state{ssh_params = Ssh}};
 after_new_keys(#state{renegotiate = false,  
 		      ssh_params = #ssh{role = server}} = State) ->
-    {next_state, userauth, State}.
+    {next_state, service_request, State}.
 
 after_new_keys_events({sync, _Event, From}, {stop, _Reason, _StateData}=Terminator) ->
     gen_fsm:reply(From, {error, closed}),
