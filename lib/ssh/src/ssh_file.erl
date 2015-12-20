@@ -221,9 +221,11 @@ do_lookup_host_key(KeyToMatch, Host, Alg, Opts) ->
 	{ok, Fd} ->
 	    Res = lookup_host_key_fd(Fd, KeyToMatch, Host, Alg),
 	    file:close(Fd),
-	    {ok, Res};
-	{error, enoent} -> {error, not_found};
-	Error -> Error
+	    Res;
+	{error, enoent} ->
+	    {error, not_found};
+	Error ->
+	    Error
     end.
 
 identity_key_filename('ssh-dss'            ) -> "id_dsa";
@@ -242,6 +244,9 @@ lookup_host_key_fd(Fd, KeyToMatch, Host, KeyType) ->
     case io:get_line(Fd, '') of
 	eof ->
 	    {error, not_found};
+	{error,Error} ->
+	    %% Rare... For example NFS errors
+	    {error,Error};
 	Line ->
 	    case ssh_decode_line(Line, known_hosts) of
 		[{Key, Attributes}] ->
@@ -262,7 +267,7 @@ handle_host(Fd, KeyToMatch, Host, HostList, Key, KeyType) ->
     Host1 = host_name(Host),
     case lists:member(Host1, HostList) andalso key_match(Key, KeyType) of
 	true when KeyToMatch == Key ->
-	    Key;
+	    {ok,Key};
 	_ ->
 	    lookup_host_key_fd(Fd, KeyToMatch, Host, KeyType)
     end.
@@ -309,6 +314,9 @@ lookup_user_key_fd(Fd, Key) ->
     case io:get_line(Fd, '') of
 	eof ->
 	    {error, not_found};
+	{error,Error} ->
+	    %% Rare... For example NFS errors
+	    {error,Error};
 	Line ->
 	    case ssh_decode_line(Line, auth_keys) of
 		[{AuthKey, _}] ->
@@ -328,8 +336,18 @@ is_auth_key(Key, Key) ->
 is_auth_key(_,_) -> 
     false.
 
-default_user_dir()->
-    {ok,[[Home|_]]} = init:get_argument(home),
+
+default_user_dir() ->
+    try
+	default_user_dir(os:getenv("HOME"))
+    catch
+	_:_ ->
+	    default_user_dir(init:get_argument(home))
+    end.
+
+default_user_dir({ok,[[Home|_]]}) ->
+    default_user_dir(Home);
+default_user_dir(Home) when is_list(Home) ->
     UserDir = filename:join(Home, ".ssh"),
     ok = filelib:ensure_dir(filename:join(UserDir, "dummy")),
     {ok,Info} = file:read_file_info(UserDir),
