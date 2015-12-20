@@ -110,7 +110,6 @@ Eterm*
 erts_heap_alloc(Process* p, Uint need, Uint xtra)
 {
     ErlHeapFragment* bp;
-    Eterm* htop;
     Uint n;
 #if defined(DEBUG) || defined(CHECK_FOR_HOLES)
     Uint i;
@@ -155,16 +154,6 @@ erts_heap_alloc(Process* p, Uint need, Uint xtra)
 #ifdef DEBUG
     n--;
 #endif
-
-    /*
-     * When we have created a heap fragment, we are no longer allowed
-     * to store anything more on the heap. 
-     */
-    htop = HEAP_TOP(p);
-    if (htop < HEAP_LIMIT(p)) {
-	*htop = make_pos_bignum_header(HEAP_LIMIT(p)-htop-1);
-	HEAP_TOP(p) = HEAP_LIMIT(p);
-    }
 
     bp->next = MBUF(p);
     MBUF(p) = bp;
@@ -267,6 +256,31 @@ erl_grow_pstack(ErtsPStack* s, void* default_pstack, unsigned need_bytes)
     }
     s->pend = s->pstart + new_size;
     s->psp = s->pstart + sp_offs;
+}
+
+/*
+ * Helper function for the EQUEUE macros defined in global.h.
+ */
+
+void
+erl_grow_equeue(ErtsEQueue* q, Eterm* default_equeue)
+{
+    Uint old_size = (q->end - q->start);
+    Uint new_size = old_size * 2;
+    Uint first_part = (q->end - q->front);
+    Uint second_part = (q->back - q->start);
+    Eterm* new_ptr = erts_alloc(q->alloc_type, new_size*sizeof(Eterm));
+    ASSERT(q->back == q->front);   // of course the queue is full now!
+    if (first_part > 0)
+      sys_memcpy(new_ptr, q->front, first_part*sizeof(Eterm));
+    if (second_part > 0)
+      sys_memcpy(new_ptr+first_part, q->start, second_part*sizeof(Eterm));
+    if (q->start != default_equeue)
+      erts_free(q->alloc_type, q->start);
+    q->start = new_ptr;
+    q->end = q->start + new_size;
+    q->front = q->start;
+    q->back = q->start + old_size;
 }
 
 /* CTYPE macros */
@@ -398,9 +412,6 @@ erts_print(int to, void *arg, char *format, ...)
 	    break;
 	case ERTS_PRINT_DSBUF:
 	    res = erts_vdsprintf((erts_dsprintf_buf_t *) arg, format, arg_list);
-	    break;
-	case ERTS_PRINT_INVALID:
-	    res = -EINVAL;
 	    break;
 	default:
 	    res = erts_vfdprintf((int) to, format, arg_list);
@@ -2284,7 +2295,11 @@ static void do_send_logger_message(Eterm *hp, ErlOffHeap *ohp, ErlHeapFragment *
 	erts_queue_error_logger_message(from, message, bp);
     }
 #else
-    erts_queue_message(p, NULL /* only used for smp build */, bp, message, NIL);
+    {
+	ErtsMessage *mp = erts_alloc_message(0, NULL);
+	mp->data.heap_frag = bp;
+	erts_queue_message(p, NULL /* only used for smp build */, mp, message, NIL);
+    }
 #endif
 }
 

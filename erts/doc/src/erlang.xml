@@ -4,7 +4,7 @@
 <erlref>
   <header>
     <copyright>
-      <year>1996</year><year>2013</year>
+      <year>1996</year><year>2015</year>
       <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
@@ -59,14 +59,20 @@
     </datatype>
 
     <datatype>
+      <name name="message_queue_data"></name>
+      <desc><p>See <seealso marker="#process_flag_message_queue_data"><c>erlang:process_flag(message_queue_data, MQD)</c></seealso>.</p>
+      </desc>
+    </datatype>
+
+    <datatype>
       <name name="timestamp"></name>
       <desc><p>See <seealso marker="#timestamp/0">erlang:timestamp/0</seealso>.</p>
       </desc>
     </datatype>
-    <marker id="type_time_unit"/>
     <datatype>
       <name name="time_unit"></name>
-      <desc><p>Supported time unit representations:</p>
+      <desc><p><marker id="type_time_unit"/>
+        Supported time unit representations:</p>
         <taglist>
 	  <tag><c>PartsPerSecond :: integer() >= 1</c></tag>
 	  <item><p>Time unit expressed in parts per second. That is,
@@ -439,7 +445,7 @@
     <func>
       <name name="binary_to_list" arity="3"/>
       <fsummary>Converts part of a binary to a list.</fsummary>
-      <type_desc variable="Start">1..byte_size(<anno>Binary</anno>)</type_desc>
+      <type_desc variable="Start">1..byte_size(<c><anno>Binary</anno></c>)</type_desc>
       <desc>
         <p>As <c>binary_to_list/1</c>, but returns a list of integers
           corresponding to the bytes from position <c><anno>Start</anno></c> to
@@ -874,10 +880,10 @@
           </item>
           <tag><c>line</c></tag>
           <item>
-            <p>A packet is a line terminated with newline. The
-              newline character is included in the returned packet
-              unless the line was truncated according to option
-              <c>line_length</c>.</p> 
+            <p>A packet is a line terminated by a delimiter byte,
+            default is the latin1 newline character. The delimiter
+            byte is included in the returned packet unless the line
+            was truncated according to option <c>line_length</c>.</p>
           </item>
           <tag><c>asn1 | cdr | sunrm | fcgi | tpkt</c></tag>
           <item>
@@ -932,6 +938,10 @@
                 packet types as an alias for option <c>packet_size</c>
                 if <c>packet_size</c> itself is not set. This use is
                 only intended for backward compatibility.</p>
+              </item>
+              <tag><c>{line_delimiter, 0 =&lt; byte() =&lt; 255}</c></tag>
+              <item><p>For packet type <c>line</c>, sets the delimiting byte.
+                Default is the latin1 character <c>$\n</c>.</p>
               </item>
             </taglist>
         <p>Examples:</p>
@@ -993,19 +1003,19 @@
           the call, though. It is therefore usually advisable
           to remove such a <c>'DOWN'</c> message from the message queue
           after monitoring has been stopped.
-          <seealso marker="#demonitor/2">demonitor(<anno>MonitorRef</anno>, [flush])</seealso>
+          <seealso marker="#demonitor/2"><c>demonitor(<anno>MonitorRef</anno>, [flush])</c></seealso>
           can be used instead of
           <c>demonitor(<anno>MonitorRef</anno>)</c> if this cleanup is wanted.</p>
         <note>
-          <p>Before OTP R11B (<c>ERTS</c> 5.5), <c>demonitor/1</c>
-            behaved asynchronous, that is, the monitor was active
-            until the "demonitor signal" reached the monitored entity.
-            This had an undesirable effect, as you could never know when
-            you were guaranteed <em>not</em> to receive a <c>DOWN</c>
-            message because of the monitor.</p>
-          <p>The current behavior can be viewed as two combined operations:
-            asynchronously send a "demonitor signal" to the monitored
-            entity and ignore any future results of the monitor.</p>
+          <p>Prior to OTP release R11B (ERTS version 5.5) <c>demonitor/1</c>
+            behaved completely asynchronously, i.e., the monitor was active
+            until the "demonitor signal" reached the monitored entity. This
+            had one undesirable effect. You could never know when
+            you were guaranteed <em>not</em> to receive a <c>DOWN</c> message
+            due to the monitor.</p>
+          <p>Current behavior can be viewed as two combined operations:
+            asynchronously send a "demonitor signal" to the monitored entity
+            and ignore any future results of the monitor. </p>
         </note>
         <p>Failure: It is an error if <c><anno>MonitorRef</anno></c> refers to a
           monitoring started by another process. Not all such cases are
@@ -1022,7 +1032,7 @@
         <p>The returned value is <c>true</c> unless <c>info</c> is part
           of <c><anno>OptionList</anno></c>.</p>
         <p><c>demonitor(<anno>MonitorRef</anno>, [])</c> is equivalent to
-          <seealso marker="#demonitor/1">demonitor(<anno>MonitorRef</anno>)</seealso>.</p>
+          <seealso marker="#demonitor/1"><c>demonitor(<anno>MonitorRef</anno>)</c></seealso>.</p>
         <p>The available <c><anno>Option</anno></c>s are as follows:</p>
         <taglist>
           <tag><c>flush</c></tag>
@@ -1110,8 +1120,8 @@
 
     <func>
       <name name="element" arity="2"/>
-      <type_desc variable="N">1..tuple_size(<anno>Tuple</anno>)</type_desc>
       <fsummary>Returns the Nth element of a tuple.</fsummary>
+      <type_desc variable="N">1..tuple_size(<anno>Tuple</anno>)</type_desc>
       <desc>
         <p>Returns the <c><anno>N</anno></c>th element (numbering from 1) of
           <c><anno>Tuple</anno></c>, for example:</p>
@@ -2851,10 +2861,10 @@ os_prompt% </pre>
     <func>
       <name name="monitor" arity="2" clause_i="1"/>
       <name name="monitor" arity="2" clause_i="2"/>
+      <fsummary>Starts monitoring.</fsummary>
       <type name="registered_name"/>
       <type name="registered_process_identifier"/>
       <type name="monitor_process_identifier"/>
-      <fsummary>Starts monitoring.</fsummary>
       <desc>
 	<p>Send a monitor request of type <c><anno>Type</anno></c> to the
 	entity identified by <c><anno>Item</anno></c>. The caller of
@@ -3577,8 +3587,8 @@ os_prompt% </pre>
 
     <func>
       <name name="phash" arity="2"/>
-      <type_desc variable="Range">Range = 1..2^32, Hash = 1..Range</type_desc>
       <fsummary>Portable hash function.</fsummary>
+      <type_desc variable="Range">Range = 1..2^32, Hash = 1..Range</type_desc>
       <desc>
         <p>Portable hash function that gives the same hash for
           the same Erlang term regardless of machine architecture and
@@ -3596,9 +3606,9 @@ os_prompt% </pre>
     <func>
       <name name="phash2" arity="1"/>
       <name name="phash2" arity="2"/>
+      <fsummary>Portable hash function.</fsummary>
       <type_desc variable="Range">1..2^32</type_desc>
       <type_desc variable="Hash">0..Range-1</type_desc>
-      <fsummary>Portable hash function.</fsummary>
       <desc>
         <p>Portable hash function that gives the same hash for
           the same Erlang term regardless of machine architecture and
@@ -4276,9 +4286,59 @@ os_prompt% </pre>
         <p>Returns the old value of the flag.</p>
       </desc>
     </func>
-
+    <marker id="process_flag_message_queue_data"/>
     <func>
       <name name="process_flag" arity="2" clause_i="5"/>
+      <fsummary>Set process flag <c>message_queue_data</c> for the calling process</fsummary>
+      <type name="message_queue_data"/>
+      <desc>
+	<p>This flag determines how messages in the message queue
+	are stored. When the flag is:</p>
+        <taglist>
+          <tag><c>off_heap</c></tag>
+	  <item><p>
+	    <em>All</em> messages in the message queue will be stored
+	    outside of the process heap. This implies that <em>no</em>
+	    messages in the message queue will be part of a garbage
+	    collection of the process.
+	  </p></item>
+          <tag><c>on_heap</c></tag>
+	  <item><p>
+	    All messages in the message queue will eventually be
+	    placed on heap. They may however temporarily be stored
+	    off heap. This is how messages always have been stored
+	    up until ERTS version 8.0.
+	  </p></item>
+          <tag><c>mixed</c></tag>
+	  <item><p>
+	    Messages may be placed either on the heap or outside
+	    of the heap.
+	  </p></item>
+        </taglist>
+	<p>
+	  The default <c>message_queue_data</c> process flag is determined
+	  by the <seealso marker="erl#+xmqd"><c>+xmqd</c></seealso>
+	  <c>erl</c> command line argument.
+	</p>
+	<p>
+	  If the process potentially may get a hugh amount of messages,
+	  you are recommended to set the flag to <c>off_heap</c>. This
+	  since a garbage collection with lots of messages placed on
+	  the heap may become extremly expensive and the process may
+	  consume large amounts of memory. Performance of the
+	  actual message passing is however generally better when not
+	  using the <c>off_heap</c> flag.
+	</p>
+	<p>
+	  When changing this flag messages will be moved. This work
+	  has been initiated but not completed when this function
+	  call returns.
+	</p>
+        <p>Returns the old value of the flag.</p>
+      </desc>
+    </func>
+    <func>
+      <name name="process_flag" arity="2" clause_i="6"/>
       <fsummary>Sets process flag <c>priority</c> for the calling process.</fsummary>
       <type name="priority_level"/>
       <desc>
@@ -4352,7 +4412,7 @@ os_prompt% </pre>
     </func>
 
     <func>
-      <name name="process_flag" arity="2" clause_i="6"/>
+      <name name="process_flag" arity="2" clause_i="7"/>
       <fsummary>Sets process flag <c>save_calls</c> for the calling process.</fsummary>
       <desc>
         <p><c><anno>N</anno></c> must be an integer in the interval 0..10000.
@@ -4383,7 +4443,7 @@ os_prompt% </pre>
     </func>
 
     <func>
-      <name name="process_flag" arity="2" clause_i="7"/>
+      <name name="process_flag" arity="2" clause_i="8"/>
       <fsummary>Sets process flag <c>sensitive</c> for the calling process.</fsummary>
       <desc>
         <p>Sets or clears flag <c>sensitive</c> for the current process.
@@ -4437,6 +4497,7 @@ os_prompt% </pre>
       <type name="process_info_result_item"/>
       <type name="priority_level"/>
       <type name="stack_item"/>
+      <type name="message_queue_data" />
       <desc>
         <p>Returns a list containing <c><anno>InfoTuple</anno></c>s with
 	  miscellaneous information about the process identified by
@@ -4489,6 +4550,7 @@ os_prompt% </pre>
       <type name="process_info_result_item"/>
       <type name="stack_item"/>
       <type name="priority_level"/>
+      <type name="message_queue_data" />
       <desc>
         <p>Returns information about the process identified by
            <c><anno>Pid</anno></c>, as specified by
@@ -4656,6 +4718,15 @@ os_prompt% </pre>
               For a remote process
               monitor by name, the list item is
               <c>{process, {<anno>RegName</anno>, <anno>Node</anno>}}</c>.</p>
+          </item>
+          <tag><c>{message_queue_data, <anno>MQD</anno>}</c></tag>
+          <item>
+            <p>Returns the current state of the <c>message_queue_data</c>
+	    process flag. <c><anno>MQD</anno></c> is either <c>off_heap</c>,
+	    <c>on_heap</c>, or <c>mixed</c>. For more information, see the
+	    documentation of
+            <seealso marker="#process_flag_message_queue_data"><c>process_flag(message_queue_data,
+	    MQD)</c></seealso>.</p>
           </item>
           <tag><c>{priority, <anno>Level</anno>}</c></tag>
           <item>
@@ -5236,8 +5307,8 @@ true</pre>
 
     <func>
       <name name="setelement" arity="3"/>
-      <type_desc variable="Index">1..tuple_size(<anno>Tuple1</anno></type_desc>
       <fsummary>Sets the Nth element of a tuple.</fsummary>
+      <type_desc variable="Index">1..tuple_size(<anno>Tuple1</anno></type_desc>
       <desc>
         <p>Returns a tuple that is a copy of argument
           <c><anno>Tuple1</anno></c>
@@ -5425,6 +5496,8 @@ true</pre>
       <name name="spawn_opt" arity="2"/>
       <fsummary>Creates a new process with a fun as entry point.</fsummary>
       <type name="priority_level"/>
+      <type name="message_queue_data" />
+      <type name="spawn_opt_option" />
       <desc>
         <p>Returns the process identifier (pid) of a new process
           started by the application of <c><anno>Fun</anno></c>
@@ -5440,6 +5513,8 @@ true</pre>
       <name name="spawn_opt" arity="3"/>
       <fsummary>Creates a new process with a fun as entry point on a given node.</fsummary>
       <type name="priority_level"/>
+      <type name="message_queue_data" />
+      <type name="spawn_opt_option" />
       <desc>
         <p>Returns the process identifier (pid) of a new process started
           by the application of <c><anno>Fun</anno></c> to the
@@ -5454,6 +5529,8 @@ true</pre>
       <name name="spawn_opt" arity="4"/>
       <fsummary>Creates a new process with a function as entry point.</fsummary>
       <type name="priority_level"/>
+      <type name="message_queue_data" />
+      <type name="spawn_opt_option" />
       <desc>
         <p>Works as
           <seealso marker="#spawn/3">spawn/3</seealso>, except that an
@@ -5555,6 +5632,18 @@ true</pre>
               fine-tuning an application and to measure the execution
               time with various <c><anno>VSize</anno></c> values.</p>
           </item>
+          <tag><c>{message_queue_data, <anno>MQD</anno>}</c></tag>
+          <item>
+            <p>Sets the state of the <c>message_queue_data</c> process
+	    flag. <c><anno>MQD</anno></c> should be either <c>off_heap</c>,
+	    <c>on_heap</c>, or <c>mixed</c>. The default
+	    <c>message_queue_data</c> process flag is determined by the
+	    <seealso marker="erl#+xmqd"><c>+xmqd</c></seealso> <c>erl</c>
+	    command line argument. For more information, see the
+	    documentation of
+            <seealso marker="#process_flag_message_queue_data"><c>process_flag(message_queue_data,
+	    <anno>MQD</anno>)</c></seealso>.</p>
+          </item>
         </taglist>
       </desc>
     </func>
@@ -5563,6 +5652,8 @@ true</pre>
       <name name="spawn_opt" arity="5"/>
       <fsummary>Creates a new process with a function as entry point on a given node.</fsummary>
       <type name="priority_level"/>
+      <type name="message_queue_data" />
+      <type name="spawn_opt_option" />
       <desc>
         <p>Returns the process identifier (pid) of a new process started
           by the application
@@ -5578,8 +5669,8 @@ true</pre>
 
     <func>
       <name name="split_binary" arity="2"/>
-      <type_desc variable="Pos">0..byte_size(Bin)</type_desc>
       <fsummary>Splits a binary into two.</fsummary>
+      <type_desc variable="Pos">0..byte_size(Bin)</type_desc>
       <desc>
         <p>Returns a tuple containing the binaries that are the result
           of splitting <c><anno>Bin</anno></c> into two parts at
@@ -6471,7 +6562,7 @@ ok
 	    <p>Returns various size information for the specified
 	    allocator. The information returned is a subset of the
 	    information returned by
-	    <seealso marker="#system_info_allocator_tuple">erlang:system_info({allocator, <anno>Alloc</anno>})</seealso>.
+	    <seealso marker="#system_info_allocator_tuple"><c>erlang:system_info({allocator, <anno>Alloc</anno>})</c></seealso>.
 	    </p>
           </item>
         </taglist>
@@ -6635,6 +6726,7 @@ ok
       <name name="system_info" arity="1" clause_i="65"/>
       <name name="system_info" arity="1" clause_i="66"/>
       <name name="system_info" arity="1" clause_i="67"/>
+      <name name="system_info" arity="1" clause_i="68"/>
       <fsummary>Information about the system.</fsummary>
       <desc>
         <p>Returns various information about the current system
@@ -6851,7 +6943,7 @@ ok
 	      The return value will always be <c>false</c>, as the
 	      <c>elib_malloc</c> allocator has been removed.</p>
           </item>
-          <tag><marker id="system_info_eager_check_io"><c>eager_check_io</c></marker></tag>
+          <tag><marker id="system_info_eager_check_io"/><c>eager_check_io</c></tag>
           <item>
             <p>
 	      Returns the value of the <c>erl</c> command line flag
@@ -7040,7 +7132,17 @@ ok
               used by the runtime system. It is on the form
 	      "&lt;major ver&gt;.&lt;minor ver&gt;".</p>
           </item>
-          <tag><c>otp_release</c></tag>
+          <tag><marker id="system_info_message_queue_data"><c>message_queue_data</c></marker></tag>
+          <item>
+            <p>Returns the default value of the <c>message_queue_data</c>
+	    process flag which is either <c>off_heap</c>, <c>on_heap</c>, or <c>mixed</c>.
+	    This default is set by the <c>erl</c> command line argument
+	    <seealso marker="erl#+xmqd"><c>+xmqd</c></seealso>. For more information on the
+	    <c>message_queue_data</c> process flag, see documentation of
+            <seealso marker="#process_flag_message_queue_data"><c>process_flag(message_queue_data,
+	    MQD)</c></seealso>.</p>
+          </item>
+          <tag><marker id="system_info_otp_release"><c>otp_release</c></marker></tag>
           <item>
           <marker id="system_info_otp_release"></marker>
             <p>Returns a string containing the OTP release number of the
@@ -7054,7 +7156,7 @@ ok
 	    of versions in <seealso marker="doc/system_principles:versions">
 	    System principles</seealso> in System Documentation.</p>
           </item>
-          <tag><marker id="system_info_os_monotonic_time_source"><c>os_monotonic_time_source</c></marker></tag>
+          <tag><marker id="system_info_os_monotonic_time_source"/><c>os_monotonic_time_source</c></tag>
           <item>
             <p>Returns a list containing information about the source of
 	    <seealso marker="erts:time_correction#OS_Monotonic_Time">OS
@@ -7117,7 +7219,7 @@ ok
 	      <seealso marker="#type_time_unit">time unit</seealso>.</p></item>
 	    </taglist>
           </item>
-          <tag><marker id="system_info_os_system_time_source"><c>os_system_time_source</c></marker></tag>
+          <tag><marker id="system_info_os_system_time_source"/><c>os_system_time_source</c></tag>
           <item>
             <p>Returns a list containing information about the source of
 	    <seealso marker="erts:time_correction#OS_System_Time">OS
@@ -7294,7 +7396,6 @@ ok
 	    <seealso marker="#system_info_schedulers">erlang:system_info(schedulers)</seealso>
 	    and
 	    <seealso marker="#system_flag_schedulers_online">erlang:system_flag(schedulers_online, SchedulersOnline)</seealso>.</p>
-            <name name="system_info" arity="1" clause_i="49"/>
           </item>
           <tag><c>smp_support</c></tag>
           <item>
@@ -7482,7 +7583,7 @@ ok
           system performance monitoring settings are cleared.</p>
         <p>Calling the function with <c>{<anno>MonitorPid</anno>,
           <anno>Options</anno>}</c> as argument is the same as calling
-          <seealso marker="#system_monitor/2">erlang:system_monitor(<anno>MonitorPid</anno>, <anno>Options</anno>)</seealso>.</p>
+          <seealso marker="#system_monitor/2"><c>erlang:system_monitor(<anno>MonitorPid</anno>, <anno>Options</anno>)</c></seealso>.</p>
         <p>Returns the previous system monitor settings just like
           <seealso marker="#system_monitor/0">erlang:system_monitor/0</seealso>.</p>
       </desc>
@@ -7853,8 +7954,8 @@ ok
     </func>
     <func>
       <name name="timestamp" arity="0"/>
-      <type name="timestamp"/>
       <fsummary>Current Erlang System time</fsummary>
+      <type name="timestamp"/>
       <desc>
 	<p>Returns current
 	<seealso marker="time_correction#Erlang_System_Time">Erlang system time</seealso>
@@ -7874,9 +7975,9 @@ timestamp() ->
     Secs = ErlangSystemTime div 1000000 - MegaSecs*1000000,
     MicroSecs = ErlangSystemTime rem 1000000,
     {MegaSecs, Secs, MicroSecs}.</code>
-        <p>The BIF uses a native implementation which does
-	not build garbage on the heap and with slightly better
-	performance.</p>
+    <p>It, however, uses a native implementation which does
+    not build garbage on the heap and with slightly better
+    performance.</p>
 
 	<note><p>This time is <em>not</em> a monotonically increasing time
 	in the general case. For more information, see the documentation of
@@ -8224,7 +8325,7 @@ timestamp() ->
               <tag><c>bin_old_vheap_size</c></tag>
               <item>The total size of unique off-heap binaries referenced
                 from the process old heap.</item>
-              <tag><c>bin_vheap_block_size</c></tag>
+              <tag><c>bin_old_vheap_block_size</c></tag>
 	      <item>The total size of binaries allowed in the virtual
 	        old heap in the process before doing a garbage collection.</item>
             </taglist>
@@ -8809,8 +8910,8 @@ timestamp() ->
             true
     end</code>
         <note>
-          <p>Before OTP R11B (<c>ERTS</c> 5.5) <c>unlink/1</c>
-            behaved asynchronous, that is, the link was active
+          <p>Prior to OTP release R11B (ERTS version 5.5) <c>unlink/1</c>
+            behaved completely asynchronously, i.e., the link was active
             until the "unlink signal" reached the linked entity. This
             had an undesirable effect, as you could never know when
             you were guaranteed <em>not</em> to be effected by the link.</p>

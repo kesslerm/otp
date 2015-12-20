@@ -38,7 +38,11 @@
 -compile({no_auto_import,[byte_size/1]}).
 -import(erlang,[byte_size/1]).
 
-
+%% Cover the code for callback handling.
+-callback must_define_this_one() -> 'ok'.
+-callback do_something_strange(atom()) -> 'ok'.
+-optional_callbacks([do_something_strange/1]).
+-optional_callbacks([ignore_me]).		%Invalid; ignored.
 
 %% Include an opaque declaration to cover the stripping of
 %% opaque types from attributes in v3_kernel.
@@ -385,9 +389,9 @@ integer_encoding_1(Config) ->
 
 do_integer_encoding(0, _, _, _) -> ok;
 do_integer_encoding(N, I0, Src, Data) ->
-    I1 = (I0 bsl 5) bor (random:uniform(32) - 1),
+    I1 = (I0 bsl 5) bor (rand:uniform(32) - 1),
     do_integer_encoding(I1, Src, Data),
-    I2 = -(I1 bxor (random:uniform(32) - 1)),
+    I2 = -(I1 bxor (rand:uniform(32) - 1)),
     do_integer_encoding(I2, Src, Data),
     do_integer_encoding(N-1, I1, Src, Data).
 

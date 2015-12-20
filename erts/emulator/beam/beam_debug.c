@@ -73,13 +73,47 @@ erts_debug_flat_size_1(BIF_ALIST_1)
     }
 }
 
+BIF_RETTYPE
+erts_debug_size_shared_1(BIF_ALIST_1)
+{
+    Process* p = BIF_P;
+    Eterm term = BIF_ARG_1;
+    Uint size = size_shared(term);
+
+    if (IS_USMALL(0, size)) {
+	BIF_RET(make_small(size));
+    } else {
+	Eterm* hp = HAlloc(p, BIG_UINT_HEAP_SIZE);
+	BIF_RET(uint_to_big(size, hp));
+    }
+}
+
+BIF_RETTYPE
+erts_debug_copy_shared_1(BIF_ALIST_1)
+{
+    Process* p = BIF_P;
+    Eterm term = BIF_ARG_1;
+    Uint size;
+    Eterm* hp;
+    Eterm copy;
+    erts_shcopy_t info;
+    INITIALIZE_SHCOPY(info);
+
+    size = copy_shared_calculate(term, &info);
+    if (size > 0) {
+      hp = HAlloc(p, size);
+    }
+    copy = copy_shared_perform(term, size, &info, &hp, &p->off_heap);
+    DESTROY_SHCOPY(info);
+    BIF_RET(copy);
+}
 
 BIF_RETTYPE
 erts_debug_breakpoint_2(BIF_ALIST_2)
 {
     Process* p = BIF_P;
     Eterm MFA = BIF_ARG_1;
-    Eterm bool = BIF_ARG_2;
+    Eterm boolean = BIF_ARG_2;
     Eterm* tp;
     Eterm mfa[3];
     int i;
@@ -87,7 +121,7 @@ erts_debug_breakpoint_2(BIF_ALIST_2)
     Eterm res;
     BpFunctions f;
 
-    if (bool != am_true && bool != am_false)
+    if (boolean != am_true && boolean != am_false)
 	goto error;
 
     if (is_not_tuple(MFA)) {
@@ -124,7 +158,7 @@ erts_debug_breakpoint_2(BIF_ALIST_2)
     erts_smp_thr_progress_block();
 
     erts_bp_match_functions(&f, mfa, specified);
-    if (bool == am_true) {
+    if (boolean == am_true) {
 	erts_set_debug_break(&f);
 	erts_install_breakpoints(&f);
 	erts_commit_staged_bp();
@@ -208,7 +242,7 @@ erts_debug_disassemble_1(BIF_ALIST_1)
     Eterm bin;
     Eterm mfa;
     BeamInstr* funcinfo = NULL;	/* Initialized to eliminate warning. */
-    BeamInstr* code_base;
+    BeamCodeHeader* code_hdr;
     BeamInstr* code_ptr = NULL;	/* Initialized to eliminate warning. */
     BeamInstr instr;
     BeamInstr uaddr;
@@ -258,12 +292,12 @@ erts_debug_disassemble_1(BIF_ALIST_1)
 	     */
 	    code_ptr = ((BeamInstr *) ep->addressv[code_ix]) - 5;
 	    funcinfo = code_ptr+2;
-	} else if (modp == NULL || (code_base = modp->curr.code) == NULL) {
+	} else if (modp == NULL || (code_hdr = modp->curr.code_hdr) == NULL) {
 	    BIF_RET(am_undef);
 	} else {
-	    n = code_base[MI_NUM_FUNCTIONS];
+	    n = code_hdr->num_functions;
 	    for (i = 0; i < n; i++) {
-		code_ptr = (BeamInstr *) code_base[MI_FUNCTIONS+i];
+		code_ptr = code_hdr->functions[i];
 		if (code_ptr[3] == name && code_ptr[4] == arity) {
 		    funcinfo = code_ptr+2;
 		    break;

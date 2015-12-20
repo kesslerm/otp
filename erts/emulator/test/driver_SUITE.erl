@@ -224,7 +224,7 @@ outputv_errors_1(Term) ->
     port_close(Port).
 
 build_iolist(N, Base) when N < 16 ->
-    case random:uniform(3) of
+    case rand:uniform(3) of
 	1 ->
 	    <<Bin:N/binary,_/binary>> = Base,
 	    Bin;
@@ -232,7 +232,7 @@ build_iolist(N, Base) when N < 16 ->
 	    lists:seq(1, N)
     end;
 build_iolist(N, Base) when N =< byte_size(Base) ->
-    case random:uniform(3) of
+    case rand:uniform(3) of
 	1 ->
 	    <<Bin:N/binary,_/binary>> = Base,
 	    Bin;
@@ -250,7 +250,7 @@ build_iolist(N, Base) when N =< byte_size(Base) ->
 	    end
     end;
 build_iolist(N0, Base) ->
-    Small = random:uniform(15),
+    Small = rand:uniform(15),
     Seq = lists:seq(1, Small),
     N = N0 - Small,
     case N rem 2 of
@@ -2395,12 +2395,34 @@ z_test(Config) when is_list(Config) ->
 
 check_io_debug() ->
     get_stable_check_io_info(),
-    {NoErrorFds, NoUsedFds, NoDrvSelStructs, NoDrvEvStructs}
+    {NoErrorFds, NoUsedFds, NoDrvSelStructs, NoDrvEvStructs} = CheckIoDebug
 	= erts_debug:get_internal_state(check_io_debug),
+    HasGetHost = has_gethost(),
+    ct:log("check_io_debug: ~p~n"
+           "HasGetHost: ~p",[CheckIoDebug, HasGetHost]),
     0 = NoErrorFds,
-    NoUsedFds = NoDrvSelStructs,
+    if
+        NoUsedFds == NoDrvSelStructs ->
+            ok;
+        HasGetHost andalso (NoUsedFds == (NoDrvSelStructs - 1)) ->
+            %% If the inet_gethost port is alive, we may have
+            %% one extra used fd that is not selected on
+            ok
+    end,
     0 = NoDrvEvStructs,
     ok.
+
+has_gethost() ->
+    has_gethost(erlang:ports()).
+has_gethost([P|T]) ->
+    case erlang:port_info(P, name) of
+        {name,"inet_gethost"++_} ->
+            true;
+        _ ->
+            has_gethost(T)
+    end;
+has_gethost([]) ->
+    false.
 
 %flush_msgs() ->
 %    receive
@@ -2502,14 +2524,7 @@ random_char() ->
     uniform(256) - 1.
 
 uniform(N) ->
-    case get(random_seed) of
-	undefined ->
-	    {X, Y, Z} = time(),
-	    random:seed(X, Y, Z);
-	_ ->
-	    ok
-    end,
-    random:uniform(N).
+    rand:uniform(N).
 
 erl_millisecs() ->
     erl_millisecs(erlang:monotonic_time()).

@@ -21,6 +21,19 @@
 #ifndef __SYS_H__
 #define __SYS_H__
 
+#if !defined(__GNUC__)
+#  define ERTS_AT_LEAST_GCC_VSN__(MAJ, MIN, PL) 0
+#elif !defined(__GNUC_MINOR__)
+#  define ERTS_AT_LEAST_GCC_VSN__(MAJ, MIN, PL) \
+  ((__GNUC__ << 24) >= (((MAJ) << 24) | ((MIN) << 12) | (PL)))
+#elif !defined(__GNUC_PATCHLEVEL__)
+#  define ERTS_AT_LEAST_GCC_VSN__(MAJ, MIN, PL) \
+  (((__GNUC__ << 24) | (__GNUC_MINOR__ << 12)) >= (((MAJ) << 24) | ((MIN) << 12) | (PL)))
+#else
+#  define ERTS_AT_LEAST_GCC_VSN__(MAJ, MIN, PL) \
+  (((__GNUC__ << 24) | (__GNUC_MINOR__ << 12) | __GNUC_PATCHLEVEL__) >= (((MAJ) << 24) | ((MIN) << 12) | (PL)))
+#endif
+
 #ifdef ERTS_INLINE
 #  ifndef ERTS_CAN_INLINE
 #    define ERTS_CAN_INLINE 1
@@ -38,6 +51,17 @@
 #  endif
 #endif
 
+#ifndef ERTS_FORCE_INLINE
+#  if ERTS_AT_LEAST_GCC_VSN__(3,1,1)
+#    define ERTS_FORCE_INLINE __inline__ __attribute__((__always_inline__))
+#  elif defined(__WIN32__)
+#    define ERTS_FORCE_INLINE __forceinline
+#  endif
+#  ifndef ERTS_FORCE_INLINE
+#    define ERTS_FORCE_INLINE ERTS_INLINE
+#  endif
+#endif
+
 #if defined(DEBUG) || defined(ERTS_ENABLE_LOCK_CHECK)
 #  undef ERTS_CAN_INLINE
 #  define ERTS_CAN_INLINE 0
@@ -46,8 +70,10 @@
 #endif
 
 #if ERTS_CAN_INLINE
+#define ERTS_GLB_FORCE_INLINE static ERTS_FORCE_INLINE
 #define ERTS_GLB_INLINE static ERTS_INLINE
 #else
+#define ERTS_GLB_FORCE_INLINE
 #define ERTS_GLB_INLINE
 #endif
 
@@ -61,16 +87,10 @@
 #  define NO_FPE_SIGNALS
 #endif
 
-#ifdef DISABLE_CHILD_WAITER_THREAD
-#undef ENABLE_CHILD_WAITER_THREAD
-#endif
-
-#if defined(ERTS_SMP) && !defined(DISABLE_CHILD_WAITER_THREAD)
-#undef ENABLE_CHILD_WAITER_THREAD
-#define ENABLE_CHILD_WAITER_THREAD 1
-#endif
-
 #define ERTS_I64_LITERAL(X) X##LL
+
+#define ErtsInArea(ptr,start,nbytes) \
+    ((UWord)((char*)(ptr) - (char*)(start)) < (nbytes))
 
 #if defined (__WIN32__)
 #  include "erl_win_sys.h"
@@ -107,19 +127,6 @@ typedef int ErtsSysFdType;
 # error missing ERTS_SYS_FD_INVALID
 #endif
 typedef ERTS_SYS_FD_TYPE ErtsSysFdType;
-#endif
-
-#if !defined(__GNUC__)
-#  define ERTS_AT_LEAST_GCC_VSN__(MAJ, MIN, PL) 0
-#elif !defined(__GNUC_MINOR__)
-#  define ERTS_AT_LEAST_GCC_VSN__(MAJ, MIN, PL) \
-  ((__GNUC__ << 24) >= (((MAJ) << 24) | ((MIN) << 12) | (PL)))
-#elif !defined(__GNUC_PATCHLEVEL__)
-#  define ERTS_AT_LEAST_GCC_VSN__(MAJ, MIN, PL) \
-  (((__GNUC__ << 24) | (__GNUC_MINOR__ << 12)) >= (((MAJ) << 24) | ((MIN) << 12) | (PL)))
-#else
-#  define ERTS_AT_LEAST_GCC_VSN__(MAJ, MIN, PL) \
-  (((__GNUC__ << 24) | (__GNUC_MINOR__ << 12) | __GNUC_PATCHLEVEL__) >= (((MAJ) << 24) | ((MIN) << 12) | (PL)))
 #endif
 
 #if ERTS_AT_LEAST_GCC_VSN__(2, 96, 0)
@@ -579,7 +586,6 @@ Uint erts_sys_misc_mem_sz(void);
 /* Io constants to erts_print and erts_putc */
 #define ERTS_PRINT_STDERR	(2)
 #define ERTS_PRINT_STDOUT	(1)
-#define ERTS_PRINT_INVALID	(0) /* Don't want to use 0 since CBUF was 0 */
 #define ERTS_PRINT_FILE		(-1)
 #define ERTS_PRINT_SBUF		(-2)
 #define ERTS_PRINT_SNBUF	(-3)
@@ -731,6 +737,7 @@ void erts_sys_main_thread(void);
 extern int erts_sys_prepare_crash_dump(int secs);
 extern void erts_sys_pre_init(void);
 extern void erl_sys_init(void);
+extern void erl_sys_late_init(void);
 extern void erl_sys_args(int *argc, char **argv);
 extern void erl_sys_schedule(int);
 void sys_tty_reset(int);
@@ -1043,7 +1050,6 @@ extern int erts_use_kernel_poll;
 
 
 #define put_int8(i, s) do {((unsigned char*)(s))[0] = (i) & 0xff;} while (0)
-
 
 /*
  * Use DEBUGF as you would use printf, but use double parentheses:

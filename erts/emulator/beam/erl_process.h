@@ -293,7 +293,6 @@ typedef enum {
     ERTS_SSI_AUX_WORK_ASYNC_READY_CLEAN_IX,
     ERTS_SSI_AUX_WORK_MISC_THR_PRGR_IX,
     ERTS_SSI_AUX_WORK_MISC_IX,
-    ERTS_SSI_AUX_WORK_CHECK_CHILDREN_IX,
     ERTS_SSI_AUX_WORK_SET_TMO_IX,
     ERTS_SSI_AUX_WORK_MSEG_CACHE_CHECK_IX,
     ERTS_SSI_AUX_WORK_REAP_PORTS_IX,
@@ -326,8 +325,6 @@ typedef enum {
     (((erts_aint32_t) 1) << ERTS_SSI_AUX_WORK_MISC_THR_PRGR_IX)
 #define ERTS_SSI_AUX_WORK_MISC \
     (((erts_aint32_t) 1) << ERTS_SSI_AUX_WORK_MISC_IX)
-#define ERTS_SSI_AUX_WORK_CHECK_CHILDREN \
-    (((erts_aint32_t) 1) << ERTS_SSI_AUX_WORK_CHECK_CHILDREN_IX)
 #define ERTS_SSI_AUX_WORK_SET_TMO \
     (((erts_aint32_t) 1) << ERTS_SSI_AUX_WORK_SET_TMO_IX)
 #define ERTS_SSI_AUX_WORK_MSEG_CACHE_CHECK \
@@ -788,12 +785,11 @@ erts_smp_reset_max_len(ErtsRunQueue *rq, ErtsRunQueueInfo *rqi)
 #define ERTS_PSD_ERROR_HANDLER			0
 #define ERTS_PSD_SAVED_CALLS_BUF		1
 #define ERTS_PSD_SCHED_ID			2
-#define ERTS_PSD_DIST_ENTRY			3
-#define ERTS_PSD_CALL_TIME_BP			4
-#define ERTS_PSD_DELAYED_GC_TASK_QS		5
-#define ERTS_PSD_NIF_TRAP_EXPORT		6
+#define ERTS_PSD_CALL_TIME_BP			3
+#define ERTS_PSD_DELAYED_GC_TASK_QS		4
+#define ERTS_PSD_NIF_TRAP_EXPORT		5
 
-#define ERTS_PSD_SIZE				7
+#define ERTS_PSD_SIZE				6
 
 typedef struct {
     void *data[ERTS_PSD_SIZE];
@@ -810,9 +806,6 @@ typedef struct {
 
 #define ERTS_PSD_SCHED_ID_GET_LOCKS ERTS_PROC_LOCK_STATUS
 #define ERTS_PSD_SCHED_ID_SET_LOCKS ERTS_PROC_LOCK_STATUS
-
-#define ERTS_PSD_DIST_ENTRY_GET_LOCKS ERTS_PROC_LOCK_MAIN
-#define ERTS_PSD_DIST_ENTRY_SET_LOCKS ERTS_PROC_LOCK_MAIN
 
 #define ERTS_PSD_CALL_TIME_BP_GET_LOCKS ERTS_PROC_LOCK_MAIN
 #define ERTS_PSD_CALL_TIME_BP_SET_LOCKS ERTS_PROC_LOCK_MAIN
@@ -915,6 +908,7 @@ struct process {
     Eterm* stop;		/* Stack top */
     Eterm* heap;		/* Heap start */
     Eterm* hend;		/* Heap end */
+    Eterm* abandoned_heap;
     Uint heap_sz;		/* Size of heap in words */
     Uint min_heap_size;         /* Minimum size of heap (in words). */
     Uint min_vheap_size;        /* Minimum size of virtual heap (in words). */
@@ -1011,8 +1005,10 @@ struct process {
     Uint16 gen_gcs;		/* Number of (minor) generational GCs. */
     Uint16 max_gen_gcs;		/* Max minor gen GCs before fullsweep. */
     ErlOffHeap off_heap;	/* Off-heap data updated by copy_struct(). */
-    ErlHeapFragment* mbuf;	/* Pointer to message buffer list */
-    Uint mbuf_sz;		/* Size of all message buffers */
+    ErlHeapFragment* mbuf;	/* Pointer to heap fragment list */
+    ErlHeapFragment* live_hf_end;
+    ErtsMessage *msg_frag;	/* Pointer to message fragment list */
+    Uint mbuf_sz;		/* Total size of heap fragments and message fragments */
     ErtsPSD *psd;		/* Rarely used process specific data */
 
     Uint64 bin_vheap_sz;	/* Virtual heap block size for binaries */
@@ -1039,6 +1035,7 @@ struct process {
 #ifdef CHECK_FOR_HOLES
     Eterm* last_htop;		/* No need to scan the heap below this point. */
     ErlHeapFragment* last_mbuf;	/* No need to scan beyond this mbuf. */
+    ErlHeapFragment* heap_hfrag; /* Heap abandoned, htop now lives in this frag */
 #endif
 
 #ifdef DEBUG
@@ -1062,6 +1059,7 @@ extern const Process erts_invalid_process;
 do {						\
   (p)->last_htop = 0;				\
   (p)->last_mbuf = 0;				\
+  (p)->heap_hfrag = NULL;			\
 } while (0)
 
 # define ERTS_HOLE_CHECK(p) erts_check_for_holes((p))
@@ -1139,14 +1137,16 @@ void erts_check_for_holes(Process* p);
 #define ERTS_PSFLG_RUNNING_SYS		ERTS_PSFLG_BIT(15)
 #define ERTS_PSFLG_PROXY		ERTS_PSFLG_BIT(16)
 #define ERTS_PSFLG_DELAYED_SYS		ERTS_PSFLG_BIT(17)
+#define ERTS_PSFLG_OFF_HEAP_MSGQ	ERTS_PSFLG_BIT(18)
+#define ERTS_PSFLG_ON_HEAP_MSGQ		ERTS_PSFLG_BIT(19)
 #ifdef ERTS_DIRTY_SCHEDULERS
-#define ERTS_PSFLG_DIRTY_CPU_PROC	ERTS_PSFLG_BIT(18)
-#define ERTS_PSFLG_DIRTY_IO_PROC	ERTS_PSFLG_BIT(19)
-#define ERTS_PSFLG_DIRTY_CPU_PROC_IN_Q	ERTS_PSFLG_BIT(20)
-#define ERTS_PSFLG_DIRTY_IO_PROC_IN_Q	ERTS_PSFLG_BIT(21)
-#define ERTS_PSFLG_MAX  (ERTS_PSFLGS_ZERO_BIT_OFFSET + 22)
+#define ERTS_PSFLG_DIRTY_CPU_PROC	ERTS_PSFLG_BIT(20)
+#define ERTS_PSFLG_DIRTY_IO_PROC	ERTS_PSFLG_BIT(21)
+#define ERTS_PSFLG_DIRTY_CPU_PROC_IN_Q	ERTS_PSFLG_BIT(22)
+#define ERTS_PSFLG_DIRTY_IO_PROC_IN_Q	ERTS_PSFLG_BIT(23)
+#define ERTS_PSFLG_MAX  (ERTS_PSFLGS_ZERO_BIT_OFFSET + 24)
 #else
-#define ERTS_PSFLG_MAX  (ERTS_PSFLGS_ZERO_BIT_OFFSET + 18)
+#define ERTS_PSFLG_MAX  (ERTS_PSFLGS_ZERO_BIT_OFFSET + 20)
 #endif
 
 #define ERTS_PSFLGS_IN_PRQ_MASK 	(ERTS_PSFLG_IN_PRQ_MAX		\
@@ -1194,12 +1194,16 @@ void erts_check_for_holes(Process* p);
 #define SPO_USE_ARGS 2
 #define SPO_MONITOR 4
 #define SPO_SYSTEM_PROC 8
+#define SPO_OFF_HEAP_MSGQ 16
+#define SPO_ON_HEAP_MSGQ 32
+
+extern int erts_default_spo_flags;
 
 /*
  * The following struct contains options for a process to be spawned.
  */
 typedef struct {
-    Uint flags;
+    int flags;
     int error_code;		/* Error code returned from create_process(). */
     Eterm mref;			/* Monitor ref returned (if SPO_MONITOR was given). */
 
@@ -1239,7 +1243,6 @@ Eterm* erts_heap_alloc(Process* p, Uint need, Uint xtra);
 Eterm* erts_set_hole_marker(Eterm* ptr, Uint sz);
 #endif
 
-extern Uint erts_default_process_flags;
 extern erts_smp_rwmtx_t erts_cpu_bind_rwmtx;
 /* If any of the erts_system_monitor_* variables are set (enabled),
 ** erts_system_monitor must be != NIL, to allow testing on just
@@ -1280,7 +1283,23 @@ extern struct erts_system_profile_flags_t erts_system_profile_flags;
 #define F_HAVE_BLCKD_MSCHED  (1 <<  8) /* Process has blocked multi-scheduling */
 #define F_P2PNR_RESCHED      (1 <<  9) /* Process has been rescheduled via erts_pid2proc_not_running() */
 #define F_FORCE_GC           (1 << 10) /* Force gc at process in-scheduling */
-#define F_DISABLE_GC         (1 << 11) /* Disable GC */
+#define F_DISABLE_GC         (1 << 11) /* Disable GC (see below) */
+#define F_OFF_HEAP_MSGQ      (1 << 12) /* Off heap msg queue */
+#define F_ON_HEAP_MSGQ       (1 << 13) /* Off heap msg queue */
+#define F_OFF_HEAP_MSGQ_CHNG (1 << 14) /* Off heap msg queue changing */
+#define F_ABANDONED_HEAP_USE (1 << 15) /* Have usage of abandoned heap */
+#define F_DELAY_GC           (1 << 16) /* Similar to disable GC (see below) */
+
+/*
+ * F_DISABLE_GC and F_DELAY_GC are similar. Both will prevent
+ * GC of the process, but it is important to use the right
+ * one:
+ * - F_DISABLE_GC should *only* be used by BIFs. This when
+ *   the BIF needs to yield while preventig a GC.
+ * - F_DELAY_GC should only be used when GC is temporarily
+ *   disabled while the process is scheduled. A process must
+ *   not be scheduled out while F_DELAY_GC is set.
+ */
 
 /* process trace_flags */
 #define F_SENSITIVE          (1 << 0)
@@ -1614,6 +1633,7 @@ void erts_schedule_thr_prgr_later_cleanup_op(void (*)(void *),
 					     void *,
 					     ErtsThrPrgrLaterOp *,
 					     UWord);
+void erts_schedule_complete_off_heap_message_queue_change(Eterm pid);
 
 #if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
 int erts_dbg_check_halloc_lock(Process *p);
@@ -1643,10 +1663,7 @@ Eterm erts_multi_scheduling_blockers(Process *);
 void erts_start_schedulers(void);
 void erts_alloc_notify_delayed_dealloc(int);
 void erts_alloc_ensure_handle_delayed_dealloc_call(int);
-#ifdef ERTS_SMP
 void erts_notify_canceled_timer(ErtsSchedulerData *, int);
-#endif
-void erts_smp_notify_check_children_needed(void);
 #endif
 #if ERTS_USE_ASYNC_READY_Q
 void erts_notify_check_async_ready_queue(void *);
@@ -1741,7 +1758,7 @@ Uint erts_debug_nbalance(void);
 
 int erts_debug_wait_completed(Process *c_p, int flags);
 
-Uint erts_process_memory(Process *c_p);
+Uint erts_process_memory(Process *c_p, int incl_msg_inq);
 
 #ifdef ERTS_SMP
 #  define ERTS_GET_SCHEDULER_DATA_FROM_PROC(PROC) ((PROC)->scheduler_data)
@@ -1871,11 +1888,6 @@ erts_psd_set(Process *p, ErtsProcLocks plocks, int ix, void *data)
 
 #define ERTS_PROC_SCHED_ID(P, L, ID) \
   ((UWord) erts_psd_set((P), (L), ERTS_PSD_SCHED_ID, (void *) (ID)))
-
-#define ERTS_PROC_GET_DIST_ENTRY(P) \
-  ((DistEntry *) erts_psd_get((P), ERTS_PSD_DIST_ENTRY))
-#define ERTS_PROC_SET_DIST_ENTRY(P, L, D) \
-  ((DistEntry *) erts_psd_set((P), (L), ERTS_PSD_DIST_ENTRY, (void *) (D)))
 
 #define ERTS_PROC_GET_SAVED_CALLS_BUF(P) \
   ((struct saved_calls *) erts_psd_get((P), ERTS_PSD_SAVED_CALLS_BUF))
@@ -2056,6 +2068,22 @@ ERTS_GLB_INLINE void erts_smp_xrunq_unlock(ErtsRunQueue *rq, ErtsRunQueue *xrq);
 ERTS_GLB_INLINE void erts_smp_runqs_lock(ErtsRunQueue *rq1, ErtsRunQueue *rq2);
 ERTS_GLB_INLINE void erts_smp_runqs_unlock(ErtsRunQueue *rq1, ErtsRunQueue *rq2);
 
+ERTS_GLB_INLINE ErtsMessage *erts_alloc_message_heap_state(Process *pp,
+							   erts_aint32_t *psp,
+							   ErtsProcLocks *plp,
+							   Uint sz,
+							   Eterm **hpp,
+							   ErlOffHeap **ohpp);
+ERTS_GLB_INLINE ErtsMessage *erts_alloc_message_heap(Process *pp,
+						     ErtsProcLocks *plp,
+						     Uint sz,
+						     Eterm **hpp,
+						     ErlOffHeap **ohpp);
+
+ERTS_GLB_INLINE void erts_shrink_message_heap(ErtsMessage **msgpp, Process *pp,
+					      Eterm *start_hp, Eterm *used_hp, Eterm *end_hp,
+					      Eterm *brefs, Uint brefs_size);
+
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
 
 ERTS_GLB_INLINE
@@ -2202,6 +2230,63 @@ erts_smp_runqs_unlock(ErtsRunQueue *rq1, ErtsRunQueue *rq2)
     if (rq1 != rq2)
 	erts_smp_mtx_unlock(&rq2->mtx);
 #endif
+}
+
+ERTS_GLB_INLINE ErtsMessage *
+erts_alloc_message_heap_state(Process *pp,
+			      erts_aint32_t *psp,
+			      ErtsProcLocks *plp,
+			      Uint sz,
+			      Eterm **hpp,
+			      ErlOffHeap **ohpp)
+{
+    int on_heap;
+
+    if ((*psp) & ERTS_PSFLG_OFF_HEAP_MSGQ) {
+	ErtsMessage *mp = erts_alloc_message(sz, hpp);
+	*ohpp = sz == 0 ? NULL : &mp->hfrag.off_heap;
+	return mp;
+    }
+
+    return erts_try_alloc_message_on_heap(pp, psp, plp, sz, hpp, ohpp, &on_heap);
+}
+
+ERTS_GLB_INLINE ErtsMessage *
+erts_alloc_message_heap(Process *pp,
+			ErtsProcLocks *plp,
+			Uint sz,
+			Eterm **hpp,
+			ErlOffHeap **ohpp)
+{
+    erts_aint32_t state = erts_smp_atomic32_read_nob(&pp->state);
+    return erts_alloc_message_heap_state(pp, &state, plp, sz, hpp, ohpp);
+}
+
+ERTS_GLB_INLINE void
+erts_shrink_message_heap(ErtsMessage **msgpp, Process *pp,
+			 Eterm *start_hp, Eterm *used_hp, Eterm *end_hp,
+			 Eterm *brefs, Uint brefs_size)
+{
+    ASSERT(start_hp <= used_hp && used_hp <= end_hp);
+    if ((*msgpp)->data.attached == ERTS_MSG_COMBINED_HFRAG)
+	*msgpp = erts_shrink_message(*msgpp, used_hp - start_hp,
+				     brefs, brefs_size);
+    else if (!(*msgpp)->data.attached) {
+	ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN
+			   & erts_proc_lc_my_proc_locks(pp));
+	HRelease(pp, end_hp, used_hp);
+    }
+    else {
+	ErlHeapFragment *hfrag = (*msgpp)->data.heap_frag;
+	if (start_hp != used_hp)
+	    hfrag = erts_resize_message_buffer(hfrag, used_hp - start_hp,
+					       brefs, brefs_size);
+	else {
+	    free_message_buffer(hfrag);
+	    hfrag = NULL;
+	}
+	(*msgpp)->data.heap_frag = hfrag;
+    }
 }
 
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
