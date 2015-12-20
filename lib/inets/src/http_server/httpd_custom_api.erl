@@ -1,8 +1,8 @@
 %%
 %% %CopyrightBegin%
-%%
-%% Copyright Ericsson AB 2005-2013. All Rights Reserved.
-%%
+%% 
+%% Copyright Ericsson AB 2015-2015. All Rights Reserved.
+%% 
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
 %% You may obtain a copy of the License at
@@ -14,29 +14,18 @@
 %% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
-%%
+%% 
 %% %CopyrightEnd%
 %%
-
 %%
+-module(httpd_custom_api).
 
-%%% Description: SSH math utilities
+-callback response_default_headers() -> 
+    [{Key::string(), Value::string()}].
+-callback response_header({Key::string(), Value::string()}) -> 
+    {true, {Key::string(), Value::string()}} | false.
+-callback request_header({Key::string(), Value::string()}) -> 
+    {true, {Key::string(), Value::string()}} | false.
 
--module(ssh_math).
-
--export([ipow/3]).
-	 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
-%% INTEGER utils
-%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%% calculate A^B mod M
-ipow(A, B, M) when M > 0, B >= 0 ->
-    crypto:bytes_to_integer(crypto:mod_pow(A, B, M)).
-
-
-
-
-
+-optional_callbacks([response_default_headers/0, response_header/1,
+		     request_header/1]).

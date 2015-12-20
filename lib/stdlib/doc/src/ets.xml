@@ -610,7 +610,7 @@ ets:is_compiled_ms(Broken).</code>
         <p>Returns the last key <c><anno>Key</anno></c> according to Erlang term
           order in the table <c>Tab</c> of the <c>ordered_set</c> type.
           If the table is of any other type, the function is synonymous
-          to <c>first/2</c>. If the table is empty,
+          to <c>first/1</c>. If the table is empty,
           <c>'$end_of_table'</c> is returned.</p>
         <p>Use <c>prev/2</c> to find preceding keys in the table.</p>
       </desc>
@@ -916,7 +916,7 @@ ets:select(Table,MatchSpec),</code>
           </item>
           <item>
             <p><c>{keypos,<anno>Pos</anno>}</c>
-              Specfies which element in the stored tuples should be
+              Specifies which element in the stored tuples should be
               used as key. By default, it is the first element, i.e.
               <c><anno>Pos</anno>=1</c>. However, this is not always appropriate. In
               particular, we do not want the first element to be the

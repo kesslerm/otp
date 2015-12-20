@@ -1,15 +1,15 @@
 ####Branch Information
 |Status|Base|Branch|Release Tag|Stable B/T|
 |:-----|:---|:-----|:----------|:---------|
-| Production   | R16    | [`basho-otp-16`](http://github.com/basho/otp/tree/basho-otp-16) | [`OTP_R16B02_basho8`](http://github.com/basho/otp/tree/OTP_R16B02_basho8) | [`OTP_R16B02_basho8`](http://github.com/basho/otp/tree/OTP_R16B02_basho8) |
+| Production   | R16    | [`basho-otp-16`](http://github.com/basho/otp/tree/basho-otp-16) | [`OTP_R16B02_basho8`](http://github.com/basho/otp/tree/OTP_R16B02_basho8) | [`OTP_R16B02_basho9`](http://github.com/basho/otp/tree/OTP_R16B02_basho9) |
 | Retired      | R15    | [`basho-otp-15`](http://github.com/basho/otp/tree/basho-otp-15) | [`basho_OTP_R15B01p`](http://github.com/basho/otp/tree/basho_OTP_R15B01p) | [`OTP_R15B01_basho1`](http://github.com/basho/otp/tree/OTP_R15B01_basho1) |
 | Active       | OTP-17 | [`basho-otp-17`](http://github.com/basho/otp/tree/basho-otp-17) | _n/a_ | [`basho-otp-17`](http://github.com/basho/otp/tree/basho-otp-17) |
-| Experimental | OTP-18 | [`basho-otp-18`](http://github.com/basho/otp/tree/basho-otp-18) | _n/a_ | [`OTP-18.0.2`](http://github.com/basho/otp/tree/OTP-18.0.2) |
+| Experimental | OTP-18 | [`basho-otp-18`](http://github.com/basho/otp/tree/basho-otp-18) | _n/a_ | [`basho-otp-18`](http://github.com/basho/otp/tree/basho-otp-18) |
 
 ##Basho Erlang/OTP
 
 This is the home of [Basho's][1] version of **Erlang/OTP**, forked from
-Ericsson's repository.  You can _(and should!)_ read their
+Ericsson's [repository][4].  You can _(and should!)_ read their
 [README][5] file for information on the language and applications.
 
 ###What's Here
@@ -18,7 +18,7 @@ Our modifications of the original distribution generally fall into one or
 more of the following categories:
 
 * Performance<br />
-  Our users care a lot about performance, and we do wahat we can to
+  Our users care a lot about performance, and we do what we can to
   get the best out of our products running on Erlang/OTP.
 * Security<br />
   In general, we tighten up security in our releases where it makes
@@ -84,8 +84,9 @@ of interest to us.
 
 Everything in Erlang/OTP, whether part of the original distribution or a
 contribution of ours, is subject to the terms of the license applied to it
-in Ericsson's repository. Through OTP-17, that's the
-[Erlang Public License][3]. Beginning with OTP-18, it's the
+in Ericsson's repository.
+Through OTP-17, that was the [Erlang Public License][3].
+Beginning with OTP-18, the sources are subject to the terms of the
 [Apache License, Version 2.0](LICENSE.txt).
 
 

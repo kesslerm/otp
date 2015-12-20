@@ -406,6 +406,12 @@ Some of the available `configure` options are:
     time source with elapsed time during suspend.
 *   `--disable-prefer-elapsed-monotonic-time-during-suspend` - Do not prefer an OS
     monotonic time source with elapsed time during suspend.
+*   `--with-clock-resolution=high|low` - Try to find clock sources for OS system
+    time, and OS monotonic time with higher or lower resolution than chosen by
+    default. Note that both alternatives may have a negative impact on the performance
+    and scalability compared to the default clock sources chosen.
+*   `--disable-saved-compile-time` - Disable saving of compile date and time
+    in the emulator binary.
 *   `--enable-dirty-schedulers` - Enable the **experimental** dirty schedulers
     functionality. Note that the dirty schedulers functionality is experimental,
     and **not supported**. This functionality **will** be subject to backward
@@ -502,7 +508,7 @@ If you have Xcode 4.3, or later, you will also need to download
 If you want to build the `wx` application, you will need to get wxWidgets-3.0
 (`wxWidgets-3.0.0.tar.bz2` from <http://sourceforge.net/projects/wxwindows/files/3.0.0/>) or get it from github with bug fixes:
 
-    $ git clone --branch WX_3_0_branch git@github.com:wxWidgets/wxWidgets.git
+    $ git clone --branch WX_3_0_BRANCH git@github.com:wxWidgets/wxWidgets.git
 
 Be aware that the wxWidgets-3.0 is a new release of wxWidgets, it is not as
 mature as the old releases and the OS X port still lags behind the other ports.
